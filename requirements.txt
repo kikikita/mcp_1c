@@ -1,0 +1,17 @@
+fastapi
+httpx
+openai
+pydantic
+pdfminer.six
+pdf2image
+pytesseract
+aiohttp
+bs4
+readability-lxml
+fastmcp
+requests
+partial_json_parser
+vllm
+transformers
+pandas
+python-docx
