@@ -23,9 +23,12 @@ pip install -r requirements.txt
 
 ## Running the MCP_1C server
 
-1. Set the `API_BASE_URL` in `MCP_1C/mcp_server.py` to the URL of your 1C HTTP
-   service. If the service requires authentication, include the user name and
-   password in the URL, e.g. `http://user:pass@1c.example.com/hs/mcp/`.
+1. Configure environment variables for connecting to the 1C OData service:
+
+   - `MCP_1C_BASE` – базовый адрес OData, например `http://host/infobase/odata/standard.odata`.
+   - `ONEC_USERNAME` и `ONEC_PASSWORD` – логин и пароль пользователя 1С.
+
+   Переменные можно задать через файл `.env` или перед запуском сервиса.
 2. Start the server:
 
 ```bash

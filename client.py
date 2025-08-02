@@ -1,5 +1,5 @@
 import asyncio
-from orchestrator_agent import SearchAgent
+from orchestrator import SearchAgent
 
 
 async def main():
