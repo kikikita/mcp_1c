@@ -31,6 +31,7 @@ ONEC_PASSWORD = os.getenv("ONEC_PASSWORD")
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP("mcp_1c")
+app = mcp.streamable_http_app
 
 # --- Dummy storage for local testing ---
 _dummy_db: Dict[str, Dict[str, Dict]] = {}
