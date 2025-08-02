@@ -3,7 +3,7 @@ LOG_DIR="$(dirname "$0")/logs"
 mkdir -p "$LOG_DIR"
 
 echo "=== Запуск MCP-сервера на порту 9000 ==="
-nohup uvicorn mcp_server:mcp --host 0.0.0.0 --port 9000 > "$LOG_DIR/mcp_server.log" 2>&1 &
+nohup uvicorn mcp_server:app --host 0.0.0.0 --port 9000 > "$LOG_DIR/mcp_server.log" 2>&1 &
 MCP_PID=$!
 echo "MCP-сервер запущен, PID=$MCP_PID"
 
