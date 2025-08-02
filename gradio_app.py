@@ -20,7 +20,7 @@ def extract_text(file_path: str) -> str:
         return pytesseract.image_to_string(img, lang='rus')
 
 
-async def chat_fn(message: str, file: Optional[str]):
+async def chat_fn(message: str, history: list, file: Optional[str]):
     text = message
     if file:
         text += "\n" + extract_text(file)
@@ -31,7 +31,11 @@ async def chat_fn(message: str, file: Optional[str]):
 def main():
     with gr.Blocks() as demo:
         gr.Markdown("# Ассистент бухгалтера")
-        chatbot = gr.ChatInterface(chat_fn, additional_inputs=[gr.File(label='Документ')])
+        chatbot = gr.ChatInterface(
+            chat_fn,
+            additional_inputs=[gr.File(label='Документ')],
+            type="messages",
+        )
     demo.launch(server_name="0.0.0.0")
 
 

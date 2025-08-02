@@ -3,7 +3,7 @@ import logging
 from typing import Annotated, List, Dict, Any, Optional
 
 import httpx
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from pydantic import Field
 from mcp.server.fastmcp import FastMCP
 from onec_client import (
@@ -106,9 +106,8 @@ async def get_item(type: str, name: str, id: str) -> Dict:
 
 @mcp.tool()
 @mcp.custom_route("/mcp/{type}/{name}", methods=["POST"])
-async def create_item(request: Request, type: str, name: str) -> Dict:
+async def create_item(type: str, name: str, payload: Dict[str, Any]) -> Dict:
     """Создать новый объект."""
-    payload = await request.json()
     if API_BASE_URL:
         return await _forward("POST", f"/{type}/{name}", json=payload)
     obj_store = _dummy_db.setdefault(f"{type}/{name}", {})
@@ -121,9 +120,8 @@ async def create_item(request: Request, type: str, name: str) -> Dict:
 
 @mcp.tool()
 @mcp.custom_route("/mcp/{type}/{name}/{id}", methods=["PATCH"])
-async def update_item(request: Request, type: str, name: str, id: str) -> Dict:
+async def update_item(type: str, name: str, id: str, payload: Dict[str, Any]) -> Dict:
     """Обновить существующий объект."""
-    payload = await request.json()
     if API_BASE_URL:
         return await _forward("PATCH", f"/{type}/{name}/{id}", json=payload)
     store = _dummy_db.setdefault(f"{type}/{name}", {})
