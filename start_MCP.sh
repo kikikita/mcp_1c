@@ -12,4 +12,3 @@ GRADIO_PID=$!
 echo "Gradio запущен, PID=$GRADIO_PID"
 
 echo "Чтобы остановить: kill $MCP_PID $GRADIO_PID"
-

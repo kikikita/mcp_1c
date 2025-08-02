@@ -32,7 +32,7 @@ def main():
     with gr.Blocks() as demo:
         gr.Markdown("# Ассистент бухгалтера")
         chatbot = gr.ChatInterface(chat_fn, additional_inputs=[gr.File(label='Документ')])
-    demo.launch()
+    demo.launch(server_name="0.0.0.0")
 
 
 if __name__ == '__main__':
