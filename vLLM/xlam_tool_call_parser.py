@@ -74,8 +74,8 @@ class xLAMToolParser(ToolParser):
                     content=model_output
                 )
             print('json_str', json_str)
-            json_str = '['+json_str+']'
-            tool_calls_data = json.loads(json_str)
+            obj = json.loads(json_str)
+            tool_calls_data = obj if isinstance(obj, list) else [obj]
             tool_calls: List[ToolCall] = []
             for idx, call in enumerate(tool_calls_data):
                 tool_call = ToolCall(
@@ -121,11 +121,11 @@ class xLAMToolParser(ToolParser):
                     return ExtractedToolCallInformation(
                         tools_called=False,
                         tool_calls=[],
-                        content=model_output
+                        content=current_text
                     )
                 print('json_str', json_str)
-                json_str = '[' + json_str + ']'
-                tool_calls_data = json.loads(json_str)
+                obj = json.loads(json_str)
+                tool_calls_data = obj if isinstance(obj, list) else [obj]
                 tool_calls: List[ToolCall] = []
                 for idx, call in enumerate(tool_calls_data):
                     tool_call = ToolCall(
@@ -141,7 +141,7 @@ class xLAMToolParser(ToolParser):
                 return ExtractedToolCallInformation(
                     tools_called=True,
                     tool_calls=tool_calls,
-                    content=model_output
+                    content=current_text
                 )
 
             except Exception:
@@ -149,7 +149,7 @@ class xLAMToolParser(ToolParser):
                 return ExtractedToolCallInformation(
                     tools_called=False,
                     tool_calls=[],
-                    content=model_output
+                    content=current_text
                 )
         else:
             return DeltaMessage(delta_text)

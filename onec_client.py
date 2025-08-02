@@ -70,9 +70,51 @@ async def unpost_document(doc_type: str, doc_id: str) -> Any:
         return resp.json()
 
 
-async def get_metadata() -> Any:
-    """Return 1C metadata description."""
+async def search_nomenclature(name: str) -> Any:
+    """Поиск номенклатуры по части наименования."""
+    params = {"$filter": f"contains(Description,'{name}')", "$top": 10}
     async with _client() as client:
-        resp = await client.get("/metadata")
+        resp = await client.get("/Catalog_Номенклатура", params=params)
         resp.raise_for_status()
         return resp.json()
+
+
+async def create_nomenclature(data: Dict[str, Any]) -> Any:
+    """Создание нового элемента номенклатуры."""
+    async with _client() as client:
+        resp = await client.post("/Catalog_Номенклатура", json=data)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def search_contractor(inn: str) -> Any:
+    """Поиск контрагента по ИНН."""
+    params = {"$filter": f"ИНН eq '{inn}'", "$top": 10}
+    async with _client() as client:
+        resp = await client.get("/Catalog_Контрагенты", params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def create_contractor(data: Dict[str, Any]) -> Any:
+    """Создание нового контрагента."""
+    async with _client() as client:
+        resp = await client.post("/Catalog_Контрагенты", json=data)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def create_payment(data: Dict[str, Any]) -> Any:
+    """Создание платёжного поручения."""
+    async with _client() as client:
+        resp = await client.post("/payments", json=data)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def get_metadata() -> Any:
+    """Возвратить описание метаданных 1К."""
+    async with _client() as client:
+        resp = await client.get("/$metadata")
+        resp.raise_for_status()
+        return resp.text
