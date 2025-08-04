@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+*.log
+logs/
+.git
+.vscode

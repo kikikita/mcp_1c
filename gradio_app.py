@@ -30,19 +30,23 @@ async def chat_fn(message: str, history: list, file: Optional[str]):
         formatted_history.append({"role": "user", "content": user_msg})
         formatted_history.append({"role": "assistant", "content": bot_msg})
 
-    async with SearchAgent(mcp_cmd=os.getenv('MCP_URL', 'http://localhost:9000')) as agent:
+    async with SearchAgent(
+        mcp_cmd=os.getenv("MCP_URL", "http://localhost:9000"),
+        llm_url=os.getenv("LLM_URL", "http://localhost:8000/v1"),
+    ) as agent:
         return await agent.ask(text, history=formatted_history)
 
 
 def main():
+    port = int(os.getenv("GRADIO_PORT", "7860"))
     with gr.Blocks() as demo:
         gr.Markdown("# Ассистент бухгалтера")
-        chatbot = gr.ChatInterface(
+        gr.ChatInterface(
             chat_fn,
-            additional_inputs=[gr.File(label='Документ')],
+            additional_inputs=[gr.File(label="Документ")],
             type="messages",
         )
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(server_name="0.0.0.0", server_port=port)
 
 
 if __name__ == '__main__':
