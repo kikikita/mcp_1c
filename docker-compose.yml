@@ -3,19 +3,19 @@ version: "3.9"
 services:
   mcp-server:
     build: .
-    command: uvicorn mcp_server:app --host 0.0.0.0 --port ${MCP_PORT:-9000}
+    command: uvicorn mcp_server:app --host 0.0.0.0 --port ${MCP_PORT:-9003}
     environment:
       MCP_1C_BASE: ${MCP_1C_BASE:-}
       ONEC_USERNAME: ${ONEC_USERNAME:-}
       ONEC_PASSWORD: ${ONEC_PASSWORD:-}
     ports:
-      - "${MCP_PORT:-9000}:${MCP_PORT:-9000}"
+      - "${MCP_PORT:-9003}:${MCP_PORT:-9003}"
 
   gradio-app:
     build: .
     command: python gradio_app.py
     environment:
-      MCP_URL: http://mcp-server:${MCP_PORT:-9000}
+      MCP_URL: http://mcp-server:${MCP_PORT:-9003}
       GRADIO_PORT: ${GRADIO_PORT:-7860}
       LLM_URL: ${LLM_URL:-http://llm:8000/v1}
     ports:
