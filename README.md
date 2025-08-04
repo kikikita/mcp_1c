@@ -57,7 +57,8 @@ containerised setup. By default the stack launches three services:
 - **mcp-server** – FastAPI service exposing the MCP tools.
 - **gradio-app** – web UI for interacting with the orchestrator.
 - **llm** – optional vLLM server used by the orchestrator (can be disabled by
-  removing it from the Compose file).
+  removing it from the Compose file). It defaults to `Salesforce/xLAM-2-32b-fc-r`
+  and requires an NVIDIA GPU (e.g. A800) with the appropriate drivers.
 
 Start everything with:
 
