@@ -35,7 +35,7 @@ pip install -r requirements.txt
 python MCP_1C/mcp_server.py
 ```
 
-The MCP API will be available on port 8000 by default. Clients can connect to `/hs/mcp/` on your 1C server to invoke the tools exposed by MCP.
+The MCP API will be available on port 9000 by default. Clients can connect to `/hs/mcp/` on your 1C server to invoke the tools exposed by MCP.
 
 ### Example request
 
@@ -43,9 +43,37 @@ Once the server is running you can call the demo endpoints from another
 terminal:
 
 ```bash
-curl http://localhost:8000/1c/plan_accounts
+curl http://localhost:9000/1c/plan_accounts
 ```
 
 This returns a JSON list of account objects. Similar requests can be sent to
 `/1c/turnover` with query parameters `account`, `periodStart` and `periodEnd`.
+
+## Running with Docker
+
+The repository includes a `Dockerfile` and `docker-compose.yml` for a fully
+containerised setup. By default the stack launches three services:
+
+- **mcp-server** – FastAPI service exposing the MCP tools.
+- **gradio-app** – web UI for interacting with the orchestrator.
+- **llm** – optional vLLM server used by the orchestrator (can be disabled by
+  removing it from the Compose file).
+
+Start everything with:
+
+```bash
+docker compose up --build
+```
+
+Default ports are `9000` for the MCP server, `7860` for the Gradio UI and `8000`
+for the LLM service. If any port is busy you can override them via environment
+variables:
+
+```bash
+MCP_PORT=9100 GRADIO_PORT=7861 LLM_PORT=8001 docker compose up --build
+```
+
+The Gradio interface will then be available at
+`http://localhost:${GRADIO_PORT}`. Set `MCP_1C_BASE`, `ONEC_USERNAME` and
+`ONEC_PASSWORD` to connect to a real 1C instance.
 
