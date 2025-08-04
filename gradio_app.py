@@ -1,6 +1,6 @@
 import os
 import asyncio
-from typing import Optional
+from typing import Optional, List, Tuple
 
 import gradio as gr
 from PIL import Image
@@ -24,8 +24,14 @@ async def chat_fn(message: str, history: list, file: Optional[str]):
     text = message
     if file:
         text += "\n" + extract_text(file)
+
+    formatted_history: List[dict] = []
+    for user_msg, bot_msg in history:
+        formatted_history.append({"role": "user", "content": user_msg})
+        formatted_history.append({"role": "assistant", "content": bot_msg})
+
     async with SearchAgent(mcp_cmd=os.getenv('MCP_URL', 'http://localhost:9000')) as agent:
-        return await agent.ask(text)
+        return await agent.ask(text, history=formatted_history)
 
 
 def main():
@@ -36,7 +42,7 @@ def main():
             additional_inputs=[gr.File(label='Документ')],
             type="messages",
         )
-    demo.launch(server_name="0.0.0.0")
+    demo.launch(server_name="0.0.0.0", server_port=7860)
 
 
 if __name__ == '__main__':
