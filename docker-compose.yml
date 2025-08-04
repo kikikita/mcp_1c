@@ -26,5 +26,12 @@ services:
   llm:
     image: vllm/vllm-openai:latest
     command: --model ${MODEL:-Salesforce/xLAM-2-32b-fc-r}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     ports:
       - "${LLM_PORT:-8000}:8000"
