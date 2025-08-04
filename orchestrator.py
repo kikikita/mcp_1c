@@ -5,6 +5,7 @@ SearchAgent объединяет vLLM-чат и MCP-поиск.
         answer = await bot.ask("Привет, мир!")
 """
 import json, asyncio
+from typing import List, Dict
 from openai import AsyncOpenAI
 from fastmcp import Client as MCP
 
@@ -43,11 +44,18 @@ class SearchAgent:
         await self.mcp.__aexit__(*exc)
         await self.llm.__aexit__(*exc)
 
-    async def ask(self, prompt: str, system: str | None = None) -> str:
+    async def ask(
+            self,
+            prompt: str,
+            system: str | None = None,
+            history: List[Dict[str, str]] | None = None,
+    ) -> str:
         """Отправляет один запрос LLM, автоматически обслуживая tool-calls."""
-        msgs = []
+        msgs: List[Dict[str, str]] = []
         if system:
             msgs.append({"role": "system", "content": system})
+        if history:
+            msgs.extend(history)
         msgs.append({"role": "user", "content": prompt})
 
         while True:
