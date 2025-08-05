@@ -51,27 +51,31 @@ This returns a JSON list of account objects. Similar requests can be sent to
 
 ## Running with Docker
 
-The repository includes a `Dockerfile` and `docker-compose.yml` for a fully
-containerised setup. By default the stack launches three services:
+The repository includes a `Dockerfile` and `docker-compose.yml` for a
+containerised setup. The stack launches two services:
 
 - **mcp-server** – FastAPI service exposing the MCP tools.
 - **gradio-app** – web UI for interacting with the orchestrator.
-- **llm** – optional vLLM server used by the orchestrator (can be disabled by
-  removing it from the Compose file). It defaults to `Salesforce/xLAM-2-32b-fc-r`
-  and requires an NVIDIA GPU (e.g. A800) with the appropriate drivers.
 
-Start everything with:
+The LLM (vLLM) server must be run separately on the host machine. Use the
+provided script:
+
+```bash
+./vLLM/start_vllm.sh
+```
+
+After the model is up, start the remaining services:
 
 ```bash
 docker compose up --build
 ```
 
 Default ports are `9000` for the MCP server, `7860` for the Gradio UI and `8000`
-for the LLM service. If any port is busy you can override them via environment
-variables:
+for the local vLLM server. If any port is busy you can override them via
+environment variables when running Compose:
 
 ```bash
-MCP_PORT=9100 GRADIO_PORT=7861 LLM_PORT=8001 docker compose up --build
+MCP_PORT=9100 GRADIO_PORT=7861 docker compose up --build
 ```
 
 The Gradio interface will then be available at

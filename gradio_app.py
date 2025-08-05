@@ -32,7 +32,7 @@ async def chat_fn(message: str, history: list, file: Optional[str]):
 
     async with SearchAgent(
         mcp_cmd=os.getenv("MCP_URL", "http://localhost:9000"),
-        llm_url=os.getenv("LLM_URL", "http://localhost:8000/v1"),
+        llm_url=os.getenv("LLM_SERVER_URL", "http://localhost:8000/v1"),
     ) as agent:
         return await agent.ask(text, history=formatted_history)
 

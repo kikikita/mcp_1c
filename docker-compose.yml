@@ -10,6 +10,8 @@ services:
       ONEC_PASSWORD: ${ONEC_PASSWORD:-}
     ports:
       - "${MCP_PORT:-9003}:${MCP_PORT:-9003}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   gradio-app:
     build: .
@@ -17,21 +19,11 @@ services:
     environment:
       MCP_URL: http://mcp-server:${MCP_PORT:-9003}
       GRADIO_PORT: ${GRADIO_PORT:-7860}
-      LLM_URL: ${LLM_URL:-http://llm:8000/v1}
+      LLM_SERVER_URL: ${LLM_SERVER_URL:-http://host.docker.internal:8000/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-empty}
     ports:
       - "${GRADIO_PORT:-7860}:${GRADIO_PORT:-7860}"
     depends_on:
       - mcp-server
-
-  llm:
-    image: vllm/vllm-openai:latest
-    command: --model ${MODEL:-Salesforce/xLAM-2-32b-fc-r}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    ports:
-      - "${LLM_PORT:-8000}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
