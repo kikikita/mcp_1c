@@ -4,6 +4,7 @@ SearchAgent объединяет vLLM-чат и MCP-поиск.
     async with SearchAgent("web_search/server.py") as bot:
         answer = await bot.ask("Привет, мир!")
 """
+import os
 import json, asyncio
 from typing import List, Dict
 from openai import AsyncOpenAI
@@ -30,7 +31,7 @@ class SearchAgent:
             model: str = "Salesforce/xLAM-2-32b-fc-r"
     ):
         self.mcp = MCP(mcp_cmd)
-        self.llm = AsyncOpenAI(base_url=llm_url, api_key="dummy")
+        self.llm = AsyncOpenAI(base_url=llm_url, api_key=os.getenv("OPENAI_API_KEY", "empty"))
         self.model = model
         self.tools = None  # кеш описания инструментов
 

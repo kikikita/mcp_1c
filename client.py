@@ -1,9 +1,13 @@
 import asyncio
+import os
 from orchestrator import SearchAgent
 
 
 async def main():
-    async with SearchAgent(mcp_cmd="web_search/server.py") as bot:
+    async with SearchAgent(
+        mcp_cmd="web_search/server.py",
+        llm_url=os.getenv("LLM_SERVER_URL", "http://localhost:8000/v1"),
+    ) as bot:
         prompt = ""
         answer = await bot.ask(prompt=prompt, system="""
         You are a professional 1C system analyst.
