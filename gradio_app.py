@@ -31,7 +31,7 @@ async def chat_fn(message: str, history: list, file: Optional[str]):
         formatted_history.append({"role": "assistant", "content": bot_msg})
 
     async with SearchAgent(
-        mcp_cmd=os.getenv("MCP_URL", "http://localhost:9000"),
+        mcp_cmd=os.getenv("MCP_URL", "http://localhost:9003/mcp/"),
         llm_url=os.getenv("LLM_SERVER_URL", "http://localhost:8000/v1"),
     ) as agent:
         return await agent.ask(text, history=formatted_history)

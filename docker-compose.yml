@@ -17,7 +17,7 @@ services:
     build: .
     command: python gradio_app.py
     environment:
-      MCP_URL: http://mcp-server:${MCP_PORT:-9003}
+      MCP_URL: http://mcp-server:${MCP_PORT:-9003}/mcp/
       GRADIO_PORT: ${GRADIO_PORT:-7860}
       LLM_SERVER_URL: ${LLM_SERVER_URL:-http://host.docker.internal:8000/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-empty}
