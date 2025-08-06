@@ -7,19 +7,11 @@ from fastapi import HTTPException
 from pydantic import Field
 from mcp.server.fastmcp import FastMCP
 from onec_client import (
-    find_objects as oc_find_objects,
-    get_object as oc_get_object,
-    create_object as oc_create_object,
-    update_object as oc_update_object,
-    delete_object as oc_delete_object,
-    post_document as oc_post_document,
-    unpost_document as oc_unpost_document,
     get_metadata as oc_get_metadata,
     search_nomenclature as oc_search_nomenclature,
     create_nomenclature as oc_create_nomenclature,
     search_contractor as oc_search_contractor,
     create_contractor as oc_create_contractor,
-    create_payment as oc_create_payment,
 )
 
 
