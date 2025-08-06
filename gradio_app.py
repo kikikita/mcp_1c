@@ -1,6 +1,5 @@
 import os
-import asyncio
-from typing import Optional, List, Tuple
+from typing import Optional, List
 
 import gradio as gr
 from PIL import Image
@@ -8,6 +7,10 @@ from pdf2image import convert_from_path
 import pytesseract
 
 from orchestrator import SearchAgent
+
+# Число предыдущих сообщений диалога, которые передаются модели.
+# Можно задать через переменную окружения CHAT_HISTORY_TURNS.
+MAX_TURNS = int(os.getenv("CHAT_HISTORY_TURNS", "5"))
 
 
 def extract_text(file_path: str) -> str:
@@ -21,14 +24,30 @@ def extract_text(file_path: str) -> str:
 
 
 async def chat_fn(message: str, history: list, file: Optional[str]):
+    """Основная функция чата Gradio.
+
+    Parameters:
+        message: Текст очередного сообщения пользователя.
+        history: История переписки в формате gr.ChatMessage.
+        file:   Необязательный файл с документом, который необходимо распознать.
+    """
+
     text = message
     if file:
         text += "\n" + extract_text(file)
 
+    # Ограничиваем длину истории, чтобы не переполнять контекст окна модели.
+    trimmed_history = history[-MAX_TURNS * 2:] if MAX_TURNS > 0 else history
+
     formatted_history: List[dict] = []
-    for user_msg, bot_msg in history:
-        formatted_history.append({"role": "user", "content": user_msg})
-        formatted_history.append({"role": "assistant", "content": bot_msg})
+    for msg in trimmed_history:
+        if isinstance(msg, dict):
+            role = msg.get("role")
+            content = msg.get("content")
+        else:  # поддержка объектов gr.ChatMessage
+            role = getattr(msg, "role", "")
+            content = getattr(msg, "content", "")
+        formatted_history.append({"role": role, "content": content})
 
     async with SearchAgent(
         mcp_cmd=os.getenv("MCP_URL", "http://localhost:9003/mcp/"),
