@@ -89,12 +89,17 @@ class SearchAgent:
                 for call in msg.tool_calls:
                     args = json.loads(call.function.arguments)
                     result = await self.mcp.call_tool(call.function.name, args)
+                    output = (
+                        result.data
+                        if result.data is not None
+                        else (result.content[0].text if result.content else "")
+                    )
                     msgs.append({
                         "role": "tool",
                         "tool_call_id": call.id,
-                        "content": json.dumps(result[0].text)
+                        "content": json.dumps(output)
                     })
-                    print("function_called", result)
+                    print("function_called", output)
                 continue
             if '</Finished>' not in msg.content:
                 msgs.append(
