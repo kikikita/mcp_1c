@@ -1,7 +1,7 @@
 """
-SearchAgent объединяет vLLM-чат и MCP-поиск.
+SearchAgent объединяет vLLM-чат и MCP-инструменты.
 Использование:
-    async with SearchAgent("web_search/server.py") as bot:
+    async with SearchAgent("mcp_server.py") as bot:
         answer = await bot.ask("Привет, мир!")
 """
 import os
