@@ -58,14 +58,13 @@ class SearchAgent:
             history: List[Dict[str, str]] | None = None,
     ) -> str:
         """Отправляет один запрос LLM, автоматически обслуживая tool-calls."""
-        logger.debug("ask called with prompt=%s system=%s history=%s", prompt, system, history)
+        logger.info("User prompt: %s", prompt)
         msgs: List[Dict[str, str]] = []
         if system:
             msgs.append({"role": "system", "content": system})
         if history:
             msgs.extend(history)
         msgs.append({"role": "user", "content": prompt})
-        logger.debug("Initial messages: %s", msgs)
 
         while True:
             resp = ""
@@ -79,7 +78,6 @@ class SearchAgent:
                         "min_tokens": 5
                     }
                 )
-                logger.debug("LLM response: %s", resp)
             except Exception as e:
                 logger.exception("LLM request failed: %s", e)
                 id = msgs[-1]['tool_call_id']
@@ -98,14 +96,14 @@ class SearchAgent:
             if msg.tool_calls:
                 for call in msg.tool_calls:
                     args = json.loads(call.function.arguments)
-                    logger.debug("Calling tool %s with args %s", call.function.name, args)
+                    logger.info("Calling tool %s with args %s", call.function.name, args)
                     result = await self.mcp.call_tool(call.function.name, args)
                     output = (
                         result.data
                         if result.data is not None
                         else (result.content[0].text if result.content else "")
                     )
-                    logger.debug("Tool %s returned %s", call.function.name, output)
+                    logger.info("Tool %s returned %s", call.function.name, output)
                     msgs.append({
                         "role": "tool",
                         "tool_call_id": call.id,
@@ -117,5 +115,5 @@ class SearchAgent:
                     {"role": "user", "content": "Дай конечный результат с тегом </Finished>, "
                                                 "если ты закончил вызов инструментов."})
                 continue
-            logger.debug("Final response: %s", msg.content)
+            logger.info("Final response: %s", msg.content)
             return msg.content

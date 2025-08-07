@@ -37,11 +37,10 @@ async def chat_fn(message: str, history: list, file: Optional[str]):
         file:   Необязательный файл с документом, который необходимо распознать.
     """
 
-    logger.debug("Received message=%s file=%s", message, file)
+    logger.info("User message: %s", message)
     text = message
     if file:
         extracted = extract_text(file)
-        logger.debug("Extracted text from file: %s", extracted)
         text += "\n" + extracted
 
     # Ограничиваем длину истории, чтобы не переполнять контекст окна модели.
@@ -61,9 +60,8 @@ async def chat_fn(message: str, history: list, file: Optional[str]):
         mcp_cmd=os.getenv("MCP_URL", "http://localhost:9003/mcp/"),
         llm_url=os.getenv("LLM_SERVER_URL", "http://localhost:8000/v1"),
     ) as agent:
-        logger.debug("Sending text to agent: %s", text)
         response = await agent.ask(text, history=formatted_history)
-        logger.debug("Agent response: %s", response)
+        logger.info("Agent response: %s", response)
         return response
 
 
