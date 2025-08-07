@@ -1,6 +1,11 @@
 import asyncio
 import os
+import logging
 from orchestrator import SearchAgent
+from log_config import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 
 async def main():
@@ -20,7 +25,7 @@ async def main():
         4) Language. Always deliver your replies in Russian.
         5) Completion tag. End every final answer with the tag </Finished> (either on a new line or directly after the text).
 """)
-        print(answer)
+        logger.info("Answer: %s", answer)
 
 if __name__ == "__main__":
     asyncio.run(main())

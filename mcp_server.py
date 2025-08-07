@@ -15,9 +15,14 @@ import os
 import json
 import re
 from typing import Any, Dict, List, Optional, Union
+import logging
 
 from mcp.server.fastmcp import FastMCP
 from odata_client import ODataClient, _is_guid
+from log_config import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 
 class MCPServer:
@@ -253,7 +258,10 @@ async def list_objects(
     expand: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return a list of entities from the specified entity set."""
-    return await asyncio.to_thread(_server.list_objects, object_name, filters, top, expand)
+    logger.debug("list_objects called with object_name=%s filters=%s top=%s expand=%s", object_name, filters, top, expand)
+    result = await asyncio.to_thread(_server.list_objects, object_name, filters, top, expand)
+    logger.debug("list_objects result: %s", result)
+    return result
 
 
 @mcp.tool()
@@ -263,7 +271,10 @@ async def find_object(
     expand: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return the first entity matching the filter from the specified entity set."""
-    return await asyncio.to_thread(_server.find_object, object_name, filters, expand)
+    logger.debug("find_object called with object_name=%s filters=%s expand=%s", object_name, filters, expand)
+    result = await asyncio.to_thread(_server.find_object, object_name, filters, expand)
+    logger.debug("find_object result: %s", result)
+    return result
 
 
 @mcp.tool()
@@ -273,7 +284,10 @@ async def create_object(
     expand: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create a new entity in the specified entity set."""
-    return await asyncio.to_thread(_server.create_object, object_name, data, expand)
+    logger.debug("create_object called with object_name=%s data=%s expand=%s", object_name, data, expand)
+    result = await asyncio.to_thread(_server.create_object, object_name, data, expand)
+    logger.debug("create_object result: %s", result)
+    return result
 
 
 @mcp.tool()
@@ -284,7 +298,10 @@ async def update_object(
     expand: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Update fields of an existing entity."""
-    return await asyncio.to_thread(_server.update_object, object_name, object_id, data, expand)
+    logger.debug("update_object called with object_name=%s object_id=%s data=%s expand=%s", object_name, object_id, data, expand)
+    result = await asyncio.to_thread(_server.update_object, object_name, object_id, data, expand)
+    logger.debug("update_object result: %s", result)
+    return result
 
 
 @mcp.tool()
@@ -294,7 +311,10 @@ async def delete_object(
     physical_delete: bool = False,
 ) -> Dict[str, Any]:
     """Delete an entity (logical by default)."""
-    return await asyncio.to_thread(_server.delete_object, object_name, object_id, physical_delete)
+    logger.debug("delete_object called with object_name=%s object_id=%s physical_delete=%s", object_name, object_id, physical_delete)
+    result = await asyncio.to_thread(_server.delete_object, object_name, object_id, physical_delete)
+    logger.debug("delete_object result: %s", result)
+    return result
 
 
 @mcp.tool()
@@ -303,7 +323,10 @@ async def post_document(
     object_id: Union[str, Dict[str, str]],
 ) -> Dict[str, Any]:
     """Conduct (post) a document."""
-    return await asyncio.to_thread(_server.post_document, object_name, object_id)
+    logger.debug("post_document called with object_name=%s object_id=%s", object_name, object_id)
+    result = await asyncio.to_thread(_server.post_document, object_name, object_id)
+    logger.debug("post_document result: %s", result)
+    return result
 
 
 @mcp.tool()
@@ -312,13 +335,19 @@ async def unpost_document(
     object_id: Union[str, Dict[str, str]],
 ) -> Dict[str, Any]:
     """Reverse a previously posted document."""
-    return await asyncio.to_thread(_server.unpost_document, object_name, object_id)
+    logger.debug("unpost_document called with object_name=%s object_id=%s", object_name, object_id)
+    result = await asyncio.to_thread(_server.unpost_document, object_name, object_id)
+    logger.debug("unpost_document result: %s", result)
+    return result
 
 
 @mcp.tool()
 async def get_schema(object_name: str) -> Dict[str, Any]:
     """Retrieve metadata (properties and types) for the specified entity set."""
-    return await asyncio.to_thread(_server.get_schema, object_name)
+    logger.debug("get_schema called with object_name=%s", object_name)
+    result = await asyncio.to_thread(_server.get_schema, object_name)
+    logger.debug("get_schema result: %s", result)
+    return result
 
 
 # Expose ASGI application for uvicorn/ASGI servers.

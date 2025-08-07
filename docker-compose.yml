@@ -8,6 +8,7 @@ services:
       MCP_1C_BASE: ${MCP_1C_BASE:-}
       ONEC_USERNAME: ${ONEC_USERNAME:-}
       ONEC_PASSWORD: ${ONEC_PASSWORD:-}
+      DEBUG: ${DEBUG:-false}
     ports:
       - "${MCP_PORT:-9003}:${MCP_PORT:-9003}"
     extra_hosts:
@@ -21,6 +22,7 @@ services:
       GRADIO_PORT: ${GRADIO_PORT:-7860}
       LLM_SERVER_URL: ${LLM_SERVER_URL:-http://host.docker.internal:8000/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-empty}
+      DEBUG: ${DEBUG:-false}
     ports:
       - "${GRADIO_PORT:-7860}:${GRADIO_PORT:-7860}"
     depends_on:
