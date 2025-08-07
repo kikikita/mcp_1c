@@ -5,7 +5,7 @@ from orchestrator import SearchAgent
 
 async def main():
     async with SearchAgent(
-        mcp_cmd="web_search/server.py",
+        mcp_cmd="mcp_server.py",
         llm_url=os.getenv("LLM_SERVER_URL", "http://localhost:8000/v1"),
     ) as bot:
         prompt = ""
