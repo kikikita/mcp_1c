@@ -5,8 +5,13 @@ import gradio as gr
 from PIL import Image
 from pdf2image import convert_from_path
 import pytesseract
+import logging
 
 from orchestrator import SearchAgent
+from log_config import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # Число предыдущих сообщений диалога, которые передаются модели.
 # Можно задать через переменную окружения CHAT_HISTORY_TURNS.
@@ -32,9 +37,12 @@ async def chat_fn(message: str, history: list, file: Optional[str]):
         file:   Необязательный файл с документом, который необходимо распознать.
     """
 
+    logger.debug("Received message=%s file=%s", message, file)
     text = message
     if file:
-        text += "\n" + extract_text(file)
+        extracted = extract_text(file)
+        logger.debug("Extracted text from file: %s", extracted)
+        text += "\n" + extracted
 
     # Ограничиваем длину истории, чтобы не переполнять контекст окна модели.
     trimmed_history = history[-MAX_TURNS * 2:] if MAX_TURNS > 0 else history
@@ -53,7 +61,10 @@ async def chat_fn(message: str, history: list, file: Optional[str]):
         mcp_cmd=os.getenv("MCP_URL", "http://localhost:9003/mcp/"),
         llm_url=os.getenv("LLM_SERVER_URL", "http://localhost:8000/v1"),
     ) as agent:
-        return await agent.ask(text, history=formatted_history)
+        logger.debug("Sending text to agent: %s", text)
+        response = await agent.ask(text, history=formatted_history)
+        logger.debug("Agent response: %s", response)
+        return response
 
 
 def main():

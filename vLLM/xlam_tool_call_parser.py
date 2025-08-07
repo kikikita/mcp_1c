@@ -66,14 +66,14 @@ class xLAMToolParser(ToolParser):
         try:
             # Modified: Direct JSON parsing without looking for ```
             json_str = self.extract_first_json(model_output)
-            print('model_output', model_output)
+            logger.debug('model_output %s', model_output)
             if not json_str:
                 return ExtractedToolCallInformation(
                     tools_called=False,
                     tool_calls=[],
                     content=model_output
                 )
-            print('json_str', json_str)
+            logger.debug('json_str %s', json_str)
             obj = json.loads(json_str)
             tool_calls_data = obj if isinstance(obj, list) else [obj]
             tool_calls: List[ToolCall] = []
@@ -116,14 +116,14 @@ class xLAMToolParser(ToolParser):
         if current_text.endswith("]"):
             try:
                 json_str = self.extract_first_json(current_text)
-                print('model_output', current_text)
+                logger.debug('model_output %s', current_text)
                 if not json_str:
                     return ExtractedToolCallInformation(
                         tools_called=False,
                         tool_calls=[],
                         content=current_text
                     )
-                print('json_str', json_str)
+                logger.debug('json_str %s', json_str)
                 obj = json.loads(json_str)
                 tool_calls_data = obj if isinstance(obj, list) else [obj]
                 tool_calls: List[ToolCall] = []

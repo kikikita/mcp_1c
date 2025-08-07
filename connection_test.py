@@ -1,5 +1,11 @@
 import requests
 from requests.auth import HTTPBasicAuth
+import logging
+
+from log_config import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # === Connection parameters ===
 BASE_URL = "http://192.168.18.113/TEST19/odata/standard.odata/Catalog_Контрагенты?$format=json"
@@ -15,13 +21,12 @@ try:
         timeout=10
     )
 
-    print("Status code:", response.status_code)
+    logger.info("Status code: %s", response.status_code)
 
     if response.status_code == 200:
-        print("Server response:")
-        print(response.text)  # or response.json() if the response is JSON
+        logger.debug("Server response: %s", response.text)  # or response.json() if the response is JSON
     else:
-        print("Error:", response.text)
+        logger.error("Error: %s", response.text)
 
 except requests.exceptions.RequestException as e:
-    print("Connection error:", e)
+    logger.exception("Connection error: %s", e)
