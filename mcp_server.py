@@ -321,6 +321,10 @@ async def get_schema(object_name: str) -> Dict[str, Any]:
     return await asyncio.to_thread(_server.get_schema, object_name)
 
 
+# Expose ASGI application for uvicorn/ASGI servers.
+app = mcp.streamable_http_app()
+
+
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run("streamable-http")
 
