@@ -8,6 +8,7 @@ from pdf_parser import extract_pdf_text
 
 from orchestrator import SearchAgent
 from log_config import setup_logging
+from prompt import SYSTEM_PROMPT
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ async def chat_fn(message: str, history: list, file: Optional[str]):
         mcp_cmd=os.getenv("MCP_URL", "http://localhost:9003/mcp/"),
         llm_url=os.getenv("LLM_SERVER_URL", "http://localhost:8000/v1"),
     ) as agent:
-        response = await agent.ask(text, history=formatted_history)
+        response = await agent.ask(text, system=SYSTEM_PROMPT, history=formatted_history)
         logger.info("Agent response: %s", response)
         return response
 
