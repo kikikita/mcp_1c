@@ -79,15 +79,29 @@ class SearchAgent:
                     }
                 )
             except Exception as e:
+                # Earlier implementation assumed the last message always came
+                # from a tool and attempted to truncate its content when the
+                # LLM returned an error.  In practice network issues or other
+                # failures may occur before any tool call happens which left us
+                # with a ``KeyError`` on ``tool_call_id``.  Instead we now check
+                # whether the last message indeed belongs to a tool.  If so, we
+                # halve its content and retry, otherwise we abort with a
+                # user‑friendly error message.
                 logger.exception("LLM request failed: %s", e)
-                id = msgs[-1]['tool_call_id']
-                content = msgs[-1]['content']
-                msgs.append({
-                    "role": "tool",
-                    "tool_call_id": id,
-                    "content": content[:len(content) // 2]
-                })
-                msgs.pop(-2)
+                if msgs and msgs[-1].get("role") == "tool" and "tool_call_id" in msgs[-1]:
+                    tool_msg = msgs.pop()
+                    truncated = tool_msg.get("content", "")[:len(tool_msg.get("content", "")) // 2]
+                    msgs.append({
+                        "role": "tool",
+                        "tool_call_id": tool_msg.get("tool_call_id"),
+                        "content": truncated,
+                    })
+                    # retry the loop
+                    continue
+                # If the failure happened on a user/system message, give up and
+                # surface the error to the caller so that the application does
+                # not crash with obscure stack traces.
+                return f"Ошибка при обращении к модели: {e} </Finished>"
 
             if not resp:
                 continue
