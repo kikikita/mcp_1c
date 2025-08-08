@@ -1,11 +1,37 @@
-"""MCP server exposing 1C OData operations as callable tools for LLM agents.
+"""Enhanced MCP server exposing 1C OData operations as callable tools for LLM agents.
 
-The :class:`MCPServer` class provides a thin abstraction over
-:class:`~odata_client.ODataClient`.  Functions defined at module level and
-decorated with :func:`mcp.tool <mcp.server.fastmcp.FastMCP.tool>` expose these
-operations to Model Context Protocol (MCP) clients.  Tools are intentionally
-atomic so that a language model can compose complex business workflows from
-simple primitives.
+This module extends the original MCP server by adding higher level helper
+functions for discovering entity sets, resolving human readable names to
+concrete OData entity set identifiers, inspecting schema metadata and
+performing fuzzy field name matching.  These additions allow a language
+model to translate natural language queries into proper OData calls
+without hardcoding specific object names or property identifiers.  The
+core CRUD operations remain unchanged; additional tools provide a more
+ergonomic interface for typical business scenarios (e.g. searching
+catalogues or documents by name or code, listing available entity sets).
+
+Key improvements over the base implementation:
+
+* A method to list all entity sets exposed by the 1C service.  This
+  enables discovery of available catalogues, documents, registers, etc.
+* Helpers to map a user‑supplied type name (e.g. "справочник") and
+  entity name (e.g. "Номенклатура") to the proper OData entity set
+  identifier (e.g. ``Catalog_Номенклатура``).  The mapping uses simple
+  string normalisation and prefix matching against the service metadata.
+* Helpers to map a human readable field name (e.g. "наименование") to
+  the appropriate property defined on the entity set (e.g. ``Description``
+  or ``Наименование``).  A small synonym dictionary is provided and the
+  algorithm falls back to case‑insensitive matching.
+* A high level search tool (`search_object`) which encapsulates the
+  entity and field resolution logic.  It takes natural language type
+  and name along with user supplied filters, resolves the correct
+  entity set and property names and dispatches to either ``find_object``
+  or ``list_objects`` depending on the desired number of results.
+
+These additions are intended to be consumed by an LLM orchestrator.  The
+language model can first list the available entity sets, inspect the
+schema of a candidate entity, then construct the correct call
+parameters without manual intervention by an engineer.
 """
 
 from __future__ import annotations
@@ -14,7 +40,7 @@ import asyncio
 import os
 import json
 import re
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Tuple
 import logging
 
 from mcp.server.fastmcp import FastMCP
@@ -26,7 +52,93 @@ logger = logging.getLogger(__name__)
 
 
 class MCPServer:
-    """Encapsulates business level operations on top of the OData client."""
+    """Encapsulates business level operations on top of the OData client.
+
+    In addition to the basic CRUD methods exposed in the base version, this
+    class now provides high level helpers for entity discovery and fuzzy
+    matching of object and field names based on the service metadata.  See
+    the accompanying tool functions for the asynchronous wrappers exposed to
+    FastMCP.
+    """
+
+    # Mapping of Russian entity type words to OData prefixes.  Both
+    # singular and plural forms are supported.  Feel free to extend this
+    # dictionary with other languages or domain specific aliases as needed.
+    ENTITY_TYPE_PREFIX: Dict[str, str] = {
+        "справочник": "Catalog_",
+        "справочники": "Catalog_",
+        "catalog": "Catalog_",
+        "catalogs": "Catalog_",
+        "каталог": "Catalog_",
+        "каталоги": "Catalog_",
+        "document": "Document_",
+        "documents": "Document_",
+        "документ": "Document_",
+        "документы": "Document_",
+        "журнал": "DocumentJournal_",
+        "журналы": "DocumentJournal_",
+        "constant": "Constant_",
+        "constants": "Constant_",
+        "константа": "Constant_",
+        "константы": "Constant_",
+        "план обмена": "ExchangePlan_",
+        "планы обмена": "ExchangePlan_",
+        "exchangeplan": "ExchangePlan_",
+        "chart of accounts": "ChartOfAccounts_",
+        "план счетов": "ChartOfAccounts_",
+        "планы счетов": "ChartOfAccounts_",
+        "chartofcalculationtypes": "ChartOfCalculationTypes_",
+        "план видов расчета": "ChartOfCalculationTypes_",
+        "планы видов расчета": "ChartOfCalculationTypes_",
+        "chartofcharacteristictypes": "ChartOfCharacteristicTypes_",
+        "план видов характеристик": "ChartOfCharacteristicTypes_",
+        "регистр сведений": "InformationRegister_",
+        "регистры сведений": "InformationRegister_",
+        "informationregister": "InformationRegister_",
+        "регистр накопления": "AccumulationRegister_",
+        "регистры накопления": "AccumulationRegister_",
+        "accumulationregister": "AccumulationRegister_",
+        "регистр расчета": "CalculationRegister_",
+        "регистры расчета": "CalculationRegister_",
+        "calculationregister": "CalculationRegister_",
+        "регистр бухгалтерии": "AccountingRegister_",
+        "регистры бухгалтерии": "AccountingRegister_",
+        "accountingregister": "AccountingRegister_",
+        "бизнес процесс": "BusinessProcess_",
+        "бизнес процессы": "BusinessProcess_",
+        "businessprocess": "BusinessProcess_",
+        "задача": "Task_",
+        "задачи": "Task_",
+        "task": "Task_",
+        "tasks": "Task_",
+    }
+
+    # Synonyms for field names.  Keys are lowercased user supplied
+    # descriptors; values are lists of property names to try in order.  This
+    # mapping can be extended with additional synonyms specific to a
+    # particular 1C configuration.  If a synonym is not found, the
+    # resolution algorithm falls back to case insensitive matching and
+    # finally to the Description field if present.
+    FIELD_SYNONYMS: Dict[str, List[str]] = {
+        "наименование": ["Description", "Наименование", "Name"],
+        "имя": ["Description", "Name", "Наименование"],
+        "описание": ["Description", "Наименование"],
+        "code": ["Code", "Код"],
+        "код": ["Code", "Код"],
+        "артикул": ["Артикул", "SKU", "Code"],
+        "инн": ["ИНН", "Inn", "INN"],
+        "номер": ["Номер", "Number", "НомерДокумента", "DocumentNumber"],
+        "ид": ["Ref_Key", "ID", "RefKey"],
+        "guid": ["Ref_Key"],
+        "гид": ["Ref_Key"],
+        "количество": ["Количество", "Quantity"],
+        "цена": ["Цена", "Price"],
+        "сумма": ["Сумма", "Amount"],
+        "стоимость": ["Сумма", "Amount", "Цена"],
+        "дата": ["Дата", "Date", "ДатаДокумента"],
+        "дата документа": ["Дата", "ДатаДокумента", "Date"],
+        "формат": ["Формат", "Format"],
+    }
 
     def __init__(self, base_url: str, username: Optional[str] = None, password: Optional[str] = None,
                  timeout: int = 30, verify_ssl: bool = False) -> None:
@@ -34,7 +146,7 @@ class MCPServer:
                                   timeout=timeout, verify_ssl=verify_ssl)
 
     # ------------------------------------------------------------------
-    # Helper methods
+    # Helper methods for filter building and result parsing (unchanged)
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -50,10 +162,8 @@ class MCPServer:
         """
         if filters is None:
             return None
-        # If user provides a string just return it
         if isinstance(filters, str):
             return filters
-        # If a list is provided treat each element as a complete expression
         if isinstance(filters, list):
             return " and ".join(filt for filt in filters if filt)
         if isinstance(filters, dict):
@@ -66,17 +176,14 @@ class MCPServer:
                 elif isinstance(value, (int, float)):
                     exprs.append(f"{key} eq {value}")
                 elif isinstance(value, str):
-                    # If the value looks like an expression (contains space or operator) then use as is
                     if re.search(r"\s(and|or|eq|ne|gt|lt|ge|le)\s", value, re.IGNORECASE):
                         exprs.append(f"{key} {value}")
                     elif _is_guid(value):
                         exprs.append(f"{key} eq guid'{value}'")
                     else:
-                        # Escape single quotes by doubling them
                         safe = value.replace("'", "''")
                         exprs.append(f"{key} eq '{safe}'")
                 else:
-                    # Fallback to string conversion
                     exprs.append(f"{key} eq '{value}'")
             return " and ".join(exprs)
         return None
@@ -94,7 +201,140 @@ class MCPServer:
         }
 
     # ------------------------------------------------------------------
-    # Tool implementations
+    # Metadata based helpers
+    # ------------------------------------------------------------------
+
+    def list_entity_sets(self) -> List[str]:
+        """Return a list of all entity set names exposed by the OData service."""
+        meta = self.client.get_metadata()
+        return list(meta.get("entity_sets", {}).keys())
+
+    def get_entity_schema(self, object_name: str) -> Optional[Dict[str, Any]]:
+        """Return the schema (properties and types) for the given entity set."""
+        meta = self.client.get_metadata()
+        return meta.get("entity_sets", {}).get(object_name)
+
+    def resolve_entity_name(self, user_entity: str, user_type: Optional[str] = None) -> Optional[str]:
+        """Resolve a human readable entity name to a concrete OData entity set.
+
+        The resolution algorithm is as follows:
+
+        1. Normalise the user supplied entity name by removing whitespace and
+           converting to lowercase.  For example, "Физические лица" becomes
+           "физическиелица".
+        2. If a user_type is provided (e.g. "справочник"), translate it to
+           the appropriate prefix (e.g. ``Catalog_``) via
+           :data:`ENTITY_TYPE_PREFIX`.  Only entity sets starting with that
+           prefix will be considered.
+        3. Iterate over all entity sets from the service metadata and find
+           those whose suffix (the part after the prefix) matches the
+           normalised user name.  The match is case insensitive and ignores
+           whitespace.
+        4. If exactly one match is found, return it.  If multiple matches
+           exist, return the one with the longest common subsequence.  If
+           no matches are found, return ``None``.
+
+        :param user_entity: Raw name of the entity as provided by the user.
+        :param user_type: Optional human readable type (e.g. "справочник").
+        :returns: Name of the entity set (e.g. ``Catalog_Контрагенты``) or
+            ``None`` if no reasonable match exists.
+        """
+        if not user_entity:
+            return None
+        # Normalise the entity name: remove spaces, lower case
+        normalised = re.sub(r"\s+", "", user_entity).lower()
+        # Determine candidate prefixes
+        prefixes: List[str]
+        if user_type:
+            pfx = self.ENTITY_TYPE_PREFIX.get(user_type.strip().lower())
+            prefixes = [pfx] if pfx else []
+        else:
+            # If no type provided search across all known prefixes
+            prefixes = list(set(self.ENTITY_TYPE_PREFIX.values()))
+        if not prefixes:
+            # No prefix mapping found; fall back to all entity sets
+            prefixes = [""]
+        meta = self.client.get_metadata()
+        candidates: List[str] = []
+        entity_sets: Dict[str, Any] = meta.get("entity_sets", {})
+        for es_name in entity_sets.keys():
+            # Determine the prefix and suffix of this entity set
+            for pfx in prefixes:
+                if es_name.startswith(pfx):
+                    suffix = es_name[len(pfx):]
+                    # normalise suffix
+                    suffix_norm = re.sub(r"\s+", "", suffix).lower()
+                    if suffix_norm == normalised:
+                        return es_name
+                    if normalised in suffix_norm:
+                        candidates.append(es_name)
+        # If exact match not found, try fuzzy: choose the candidate with longest match
+        if candidates:
+            # sort by length of suffix match descending then alphabetically
+            def sort_key(name: str) -> Tuple[int, str]:
+                suffix = name.split("_", 1)[-1]
+                suffix_norm = re.sub(r"\s+", "", suffix).lower()
+                # compute overlap length
+                overlap = len(os.path.commonprefix([suffix_norm, normalised]))
+                return (overlap, name)
+            candidates.sort(key=sort_key, reverse=True)
+            return candidates[0]
+        return None
+
+    def resolve_field_name(self, object_name: str, user_field: str) -> Optional[str]:
+        """Resolve a human readable field name to an actual property on an entity.
+
+        The resolution algorithm uses the following steps:
+
+        1. If the user_field (after lowercasing and stripping whitespace) is
+           found in :data:`FIELD_SYNONYMS`, iterate through the list of
+           preferred property names.  If one of those exists on the entity
+           schema, return it.
+        2. Perform a case insensitive exact match of the user_field against
+           the available properties.  If a match is found, return it.
+        3. Perform a case insensitive containment check: if the user_field
+           appears as a substring of a property name or vice versa, return
+           that property.
+        4. If the entity defines a ``Description`` property, return it as a
+           generic fallback since most catalogues use this for human
+           readable names.  If ``Наименование`` is present, return it.
+        5. Finally return ``None`` if no match can be determined.
+
+        :param object_name: Resolved OData entity set name.
+        :param user_field: Raw field name from the user query.
+        :returns: Property name as defined in the entity schema or ``None``.
+        """
+        if not user_field:
+            return None
+        schema = self.get_entity_schema(object_name)
+        if not schema:
+            return None
+        props: Dict[str, Dict[str, Any]] = schema.get("properties", {})
+        keys = list(props.keys())
+        # Step 1: check synonyms
+        key_lower = user_field.strip().lower()
+        if key_lower in self.FIELD_SYNONYMS:
+            for candidate in self.FIELD_SYNONYMS[key_lower]:
+                if candidate in props:
+                    return candidate
+        # Step 2: exact case insensitive match
+        for prop in keys:
+            if prop.lower() == key_lower:
+                return prop
+        # Step 3: substring match
+        for prop in keys:
+            pname = prop.lower()
+            if key_lower in pname or pname in key_lower:
+                return prop
+        # Step 4: use common fields
+        if "Description" in props:
+            return "Description"
+        if "Наименование" in props:
+            return "Наименование"
+        return None
+
+    # ------------------------------------------------------------------
+    # Core CRUD and business operations (mostly unchanged)
     # ------------------------------------------------------------------
 
     def list_objects(self, object_name: str, filters: Optional[Union[str, Dict[str, Any], List[str]]] = None,
@@ -108,7 +348,6 @@ class MCPServer:
         :return: Dictionary containing metadata and the list under the ``data`` key.
         """
         builder = getattr(self.client, object_name)
-        # Apply query options
         if expand:
             builder = builder.expand(expand)
         if top is not None:
@@ -137,7 +376,6 @@ class MCPServer:
             filt = self._build_filter(filters)
             if filt:
                 builder = builder.filter(filt)
-        # Only request one record by default
         builder = builder.top(1)
         response = builder.get()
         result = self._parse_result(response, self.client)
@@ -190,7 +428,6 @@ class MCPServer:
             builder = getattr(self.client, object_name).id(object_id)
             response = builder.delete()
             return self._parse_result(response, self.client)
-        # Logical delete
         return self.update_object(object_name, object_id, {"DeletionMark": True})
 
     def post_document(self, object_name: str, object_id: Union[str, Dict[str, str]]) -> Dict[str, Any]:
@@ -201,7 +438,7 @@ class MCPServer:
         :return: Result dictionary.
         """
         builder = getattr(self.client, object_name).id(object_id)
-        response = builder("Post")  # invoke Post action
+        response = builder("Post")
         return self._parse_result(response, self.client)
 
     def unpost_document(self, object_name: str, object_id: Union[str, Dict[str, str]]) -> Dict[str, Any]:
@@ -231,14 +468,65 @@ class MCPServer:
             "schema": es,
         }
 
+    # ------------------------------------------------------------------
+    # High level search helper
+    # ------------------------------------------------------------------
+
+    def search_object(self, user_type: str, user_entity: str,
+                      user_filters: Optional[Union[str, Dict[str, Any], List[str]]] = None,
+                      top: Optional[int] = 1, expand: Optional[str] = None) -> Dict[str, Any]:
+        """Search an entity set using human friendly names and filters.
+
+        This helper resolves the entity set and property names before
+        delegating to :meth:`find_object` or :meth:`list_objects`.
+
+        :param user_type: Human readable type (e.g. "справочник", "документ").
+        :param user_entity: Name of the entity (e.g. "Номенклатура").
+        :param user_filters: Filter criteria provided by the user.  When a
+            dictionary is supplied the keys are assumed to be human
+            friendly field names and will be resolved via
+            :meth:`resolve_field_name`.  Raw strings or lists are
+            forwarded unchanged.
+        :param top: Maximum number of results.  Use 1 for a single entity.
+        :param expand: Optional ``$expand`` parameter.
+        :returns: Result dictionary similar to the CRUD methods.  If the
+            entity set cannot be resolved an error will be returned in the
+            ``odata_error_message`` field.
+        """
+        object_name = self.resolve_entity_name(user_entity, user_type)
+        if not object_name:
+            return {
+                "http_code": None,
+                "http_message": None,
+                "odata_error_code": None,
+                "odata_error_message": f"Could not resolve entity '{user_entity}' of type '{user_type}'",
+                "last_id": None,
+                "data": None,
+            }
+        # Map user_filters to actual property names if needed
+        resolved_filters: Union[str, Dict[str, Any], List[str], None] = None
+        if isinstance(user_filters, dict):
+            resolved_filters = {}
+            for k, v in user_filters.items():
+                field_name = self.resolve_field_name(object_name, k)
+                if field_name:
+                    resolved_filters[field_name] = v
+                else:
+                    # use original key if resolution fails
+                    resolved_filters[k] = v
+        else:
+            resolved_filters = user_filters
+        # Dispatch to appropriate CRUD method
+        if top is not None and int(top) <= 1:
+            return self.find_object(object_name, filters=resolved_filters, expand=expand)
+        return self.list_objects(object_name, filters=resolved_filters, top=top, expand=expand)
+
 
 # ---------------------------------------------------------------------------
-# FastMCP integration
+# FastMCP integration and tool definitions
 # ---------------------------------------------------------------------------
 
-# Environment configuration is read once at import time.  The server will fail
-# later during requests if a mandatory parameter (e.g. ``MCP_1C_BASE``) is
-# missing, which keeps module import lightweight.
+# Configuration
 BASE_URL = os.getenv("MCP_1C_BASE", "")
 USERNAME = os.getenv("ONEC_USERNAME")
 PASSWORD = os.getenv("ONEC_PASSWORD")
@@ -246,7 +534,6 @@ VERIFY_SSL = os.getenv("ONEC_VERIFY_SSL", "false").lower() not in {"false", "0",
 
 _server = MCPServer(BASE_URL, username=USERNAME, password=PASSWORD, verify_ssl=VERIFY_SSL)
 
-# FastMCP application instance used to expose tools to the LLM agent.
 mcp = FastMCP("mcp_1c")
 
 
@@ -257,7 +544,13 @@ async def list_objects(
     top: Optional[int] = None,
     expand: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Return a list of entities from the specified entity set."""
+    """Return a list of entities from the specified entity set.
+
+    This function wraps :meth:`MCPServer.list_objects` and simply forwards
+    its arguments.  Use this tool when you already know the exact name of
+    the entity set (e.g. ``Catalog_Номенклатура``) and wish to apply an
+    arbitrary filter or paging options.
+    """
     logger.debug("list_objects called with object_name=%s filters=%s top=%s expand=%s", object_name, filters, top, expand)
     result = await asyncio.to_thread(_server.list_objects, object_name, filters, top, expand)
     logger.debug("list_objects result: %s", result)
@@ -350,10 +643,48 @@ async def get_schema(object_name: str) -> Dict[str, Any]:
     return result
 
 
-# Expose ASGI application for uvicorn/ASGI servers.
-app = mcp.streamable_http_app()
+@mcp.tool()
+async def list_entity_sets() -> Dict[str, Any]:
+    """Return the list of entity sets available on the 1C OData service."""
+    logger.debug("list_entity_sets called")
+    result = await asyncio.to_thread(_server.list_entity_sets)
+    return {"entity_sets": result}
 
+
+@mcp.tool()
+async def search_object(
+    user_type: str,
+    user_entity: str,
+    user_filters: Optional[Union[str, Dict[str, Any], List[str]]] = None,
+    top: Optional[int] = 1,
+    expand: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Search an entity set using human friendly names and filters.
+
+    This tool encapsulates the entity name and field name resolution logic.  It
+    allows a language model to issue queries like "Найди контрагента по
+    наименованию Тест" without having to know that the underlying entity set
+    is ``Catalog_Контрагенты`` and the correct property is ``Description``.
+
+    :param user_type: Human readable type of the entity (e.g. "справочник").
+    :param user_entity: Human readable name of the catalogue or document.
+    :param user_filters: Filter conditions using human readable field names.
+    :param top: Maximum number of results to return; defaults to 1.
+    :param expand: Optional ``$expand`` value to include related entities.
+    :returns: A dictionary containing the HTTP and OData status along with the
+        matching entities under the ``data`` key.
+    """
+    logger.debug(
+        "search_object called with user_type=%s user_entity=%s user_filters=%s top=%s expand=%s",
+        user_type, user_entity, user_filters, top, expand,
+    )
+    result = await asyncio.to_thread(_server.search_object, user_type, user_entity, user_filters, top, expand)
+    logger.debug("search_object result: %s", result)
+    return result
+
+
+# Expose ASGI application for uvicorn/ASGI servers
+app = mcp.streamable_http_app()
 
 if __name__ == "__main__":
     mcp.run("streamable-http")
-
