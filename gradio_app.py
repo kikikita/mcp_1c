@@ -2,10 +2,9 @@ import os
 from typing import Optional, List
 
 import gradio as gr
-from PIL import Image
-from pdf2image import convert_from_path
-import pytesseract
 import logging
+
+from pdf_parser import extract_pdf_text
 
 from orchestrator import SearchAgent
 from log_config import setup_logging
@@ -19,13 +18,17 @@ MAX_TURNS = int(os.getenv("CHAT_HISTORY_TURNS", "5"))
 
 
 def extract_text(file_path: str) -> str:
-    ext = os.path.splitext(file_path)[1].lower()
-    if ext == '.pdf':
-        pages = convert_from_path(file_path)
-        return "\n".join(pytesseract.image_to_string(p, lang='rus') for p in pages)
-    else:
-        img = Image.open(file_path)
-        return pytesseract.image_to_string(img, lang='rus')
+    try:
+        pages = extract_pdf_text(
+            file_path,
+            ocr_engine="paddle",
+            ocr_lang="ru",
+            return_format="list",
+        )
+        return "\n".join(pages)
+    except Exception as e:
+        logger.exception("Failed to parse document %s: %s", file_path, e)
+        return ""
 
 
 async def chat_fn(message: str, history: list, file: Optional[str]):
@@ -40,6 +43,7 @@ async def chat_fn(message: str, history: list, file: Optional[str]):
     logger.info("User message: %s", message)
     text = message
     if file:
+        gr.Info("Документ загружен")
         extracted = extract_text(file)
         text += "\n" + extracted
 
