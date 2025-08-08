@@ -22,8 +22,8 @@ def extract_text(file_path: str) -> str:
     try:
         pages = extract_pdf_text(
             file_path,
-            ocr_engine="paddle",
-            ocr_lang="ru",
+            ocr_engine=os.getenv("OCR_ENGINE", "tesseract"),
+            ocr_lang=os.getenv("OCR_LANG", "rus+eng"),
             return_format="list",
         )
         return "\n".join(pages)

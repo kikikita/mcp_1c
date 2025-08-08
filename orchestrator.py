@@ -1,16 +1,9 @@
-"""SearchAgent объединяет vLLM-чат и MCP-инструменты.
-
-Использование:
-    async with SearchAgent("mcp_server.py") as bot:
-        answer = await bot.ask("Привет, мир!")
-"""
 import os
 import json, asyncio
 from typing import List, Dict
 from openai import AsyncOpenAI
 from fastmcp import Client as MCP
 import logging
-
 from log_config import setup_logging
 
 setup_logging()
@@ -30,16 +23,13 @@ def _mcp_to_openai(tools):
 
 
 class SearchAgent:
-    def __init__(
-            self,
-            mcp_cmd: str,
-            llm_url: str = "http://localhost:8000/v1",
-            model: str = "Salesforce/xLAM-2-32b-fc-r"
-    ):
+    def __init__(self, mcp_cmd: str,
+                 llm_url: str = "http://localhost:8000/v1",
+                 model: str = "Salesforce/xLAM-2-32b-fc-r"):
         self.mcp = MCP(mcp_cmd)
         self.llm = AsyncOpenAI(base_url=llm_url, api_key=os.getenv("OPENAI_API_KEY", "empty"))
         self.model = model
-        self.tools = None  # кеш описания инструментов
+        self.tools = None
 
     async def __aenter__(self):
         await self.mcp.__aenter__()
@@ -51,13 +41,9 @@ class SearchAgent:
         await self.mcp.__aexit__(*exc)
         await self.llm.__aexit__(*exc)
 
-    async def ask(
-            self,
-            prompt: str,
-            system: str | None = None,
-            history: List[Dict[str, str]] | None = None,
-    ) -> str:
-        """Отправляет один запрос LLM, автоматически обслуживая tool-calls."""
+    async def ask(self, prompt: str,
+                  system: str | None = None,
+                  history: List[Dict[str, str]] | None = None) -> str:
         logger.info("User prompt: %s", prompt)
         msgs: List[Dict[str, str]] = []
         if system:
@@ -66,60 +52,34 @@ class SearchAgent:
             msgs.extend(history)
         msgs.append({"role": "user", "content": prompt})
 
+        # Простейший backoff, чтобы не зациклиться
+        retries = 0
         while True:
-            resp = ""
             try:
                 resp = await self.llm.chat.completions.create(
                     model=self.model,
                     messages=msgs,
                     tools=self.tools,
                     tool_choice="auto",
-                    extra_body={
-                        "min_tokens": 5
-                    }
+                    extra_body={"min_tokens": 8},
                 )
             except Exception as e:
-                # Earlier implementation assumed the last message always came
-                # from a tool and attempted to truncate its content when the
-                # LLM returned an error.  In practice network issues or other
-                # failures may occur before any tool call happens which left us
-                # with a ``KeyError`` on ``tool_call_id``.  Instead we now check
-                # whether the last message indeed belongs to a tool.  If so, we
-                # halve its content and retry, otherwise we abort with a
-                # user‑friendly error message.
                 logger.exception("LLM request failed: %s", e)
-                # When the model call errors out we only retry if the last
-                # message came from a tool.  Earlier versions blindly assumed
-                # that this was always the case which led to ``KeyError`` if the
-                # failure happened before any tool was invoked.  Now we verify
-                # the message structure first.
-                if msgs and msgs[-1].get("role") == "tool" and "tool_call_id" in msgs[-1]:
+                if msgs and msgs[-1].get("role") == "tool" and "tool_call_id" in msgs[-1] and retries < 2:
                     tool_msg = msgs.pop()
                     content = tool_msg.get("content", "")
-                    # Send back a shorter snippet of the tool output in case it
-                    # was too long for the model.  We keep roughly half of the
-                    # original text.
-                    truncated = content[: len(content) // 2]
-                    msgs.append({
-                        "role": "tool",
-                        "tool_call_id": tool_msg.get("tool_call_id"),
-                        "content": truncated,
-                    })
-                    # retry the loop with the truncated tool response
+                    truncated = content[: max(128, len(content) // 2)]
+                    msgs.append({"role": "tool",
+                                 "tool_call_id": tool_msg["tool_call_id"],
+                                 "content": truncated})
+                    retries += 1
                     continue
-
-                # If the failure happened on a user/system message, give up and
-                # surface the error to the caller so that the application does
-                # not crash with obscure stack traces.
                 return f"Ошибка при обращении к модели: {e} </Finished>"
 
-            if not resp:
-                continue
             msg = resp.choices[0].message
-
             if msg.tool_calls:
                 for call in msg.tool_calls:
-                    args = json.loads(call.function.arguments)
+                    args = json.loads(call.function.arguments or "{}")
                     logger.info("Calling tool %s with args %s", call.function.name, args)
                     result = await self.mcp.call_tool(call.function.name, args)
                     output = (
@@ -131,13 +91,18 @@ class SearchAgent:
                     msgs.append({
                         "role": "tool",
                         "tool_call_id": call.id,
-                        "content": json.dumps(output)
+                        "content": json.dumps(output, ensure_ascii=False)
                     })
                 continue
-            if '</Finished>' not in msg.content:
-                msgs.append(
-                    {"role": "user", "content": "Дай конечный результат с тегом </Finished>, "
-                                                "если ты закончил вызов инструментов."})
+
+            if not msg.content or "</Finished>" not in msg.content:
+                # Мягкое добивание финального ответа
+                msgs.append({"role": "user",
+                             "content": "Заверши кратким результатом и тегом </Finished>."})
+                retries += 1
+                if retries > 3:
+                    return (msg.content or "Нет ответа") + " </Finished>"
                 continue
+
             logger.info("Final response: %s", msg.content)
             return msg.content

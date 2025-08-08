@@ -203,6 +203,102 @@ class MCPServer:
     # ------------------------------------------------------------------
     # Metadata based helpers
     # ------------------------------------------------------------------
+    def _resolve_reference(self, ref_spec: Any) -> Optional[str]:
+        """
+        Если значение поля — словарь вида:
+            {"user_type": "...", "user_entity": "...", "filters": {...}, "top": 1}
+        вернёт Ref_Key найденного объекта (или создаст при ensure_entity).
+        """
+        if not isinstance(ref_spec, dict):
+            return None
+        utype = ref_spec.get("user_type")
+        uent = ref_spec.get("user_entity")
+        ufilters = ref_spec.get("filters")
+        top = ref_spec.get("top", 1)
+        if not (utype and uent):
+            return None
+        res = self.search_object(utype, uent, ufilters, top=top)
+        data = res.get("data")
+        if isinstance(data, dict):
+            return data.get("Ref_Key")
+        if isinstance(data, list) and data:
+            return data[0].get("Ref_Key")
+        return None
+
+    def _resolve_refs_in_payload(self, object_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Пройдёт по полям payload; если значение словарь-спецификация ссылки — подставит *_Key.
+        """
+        schema = self.get_entity_schema(object_name) or {}
+        props = (schema.get("properties") or {})
+        out = {}
+        for k, v in (payload or {}).items():
+            field = self.resolve_field_name(object_name, k) or k
+            # Если это *_Key и значение-спецификация — резолвим
+            if (field.endswith("_Key") or field.endswith("Key")) and isinstance(v, dict):
+                guid = self._resolve_reference(v)
+                out[field] = guid or v
+            else:
+                out[field] = v
+        return out
+
+
+    def ensure_entity(self, user_type: str, user_entity: str,
+                      data_or_filters: Union[Dict[str, Any], str],
+                      expand: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Найти элемент по фильтрам; если не найден — создать.
+        data_or_filters: если dict — используется и как фильтр, и как данные при создании.
+                         если str — это готовый $filter.
+        """
+        object_name = self.resolve_entity_name(user_entity, user_type)
+        if not object_name:
+            return {"http_code": None, "odata_error_message": f"Unknown entity {user_entity}"}
+        filters = data_or_filters
+        # сначала ищем
+        found = self.find_object(object_name, filters=filters, expand=expand)
+        if found.get("data"):
+            return found
+        # создаём: маппим поля/синонимы
+        data = data_or_filters if isinstance(data_or_filters, dict) else {}
+        data = self._resolve_refs_in_payload(object_name, data)
+        created = self.create_object(object_name, data, expand=expand)
+        return created
+
+    def create_document_with_rows(self, object_name: str, header: Dict[str, Any],
+                                  rows: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+                                  post: bool = False) -> Dict[str, Any]:
+        """
+        Создать документ:
+          - object_name: например, "Document_ПоступлениеТоваров"
+          - header: поля шапки (могут содержать спецификации ссылок)
+          - rows: {"Товары": [ {...}, ... ], "Услуги": [ ... ]} — имена ТЧ как в конфигурации
+        """
+        # 1) Шапка
+        header_resolved = self._resolve_refs_in_payload(object_name, header or {})
+        created = self.create_object(object_name, header_resolved)
+        if not (200 <= (created.get("http_code") or 0) < 300):
+            return {"step": "create", **created}
+
+        doc_id = created.get("last_id")
+        results = {"header": created, "table_parts": {}}
+
+        # 2) Табличные части
+        if rows:
+            for tp_name, tp_rows in rows.items():
+                # резолв ссылок и синонимов в строках
+                normalized_rows = []
+                for r in tp_rows or []:
+                    r2 = self._resolve_refs_in_payload(object_name + "_" + tp_name, r)
+                    normalized_rows.append(r2)
+                posted = self.client.add_table_part_rows(object_name, doc_id, tp_name, normalized_rows)
+                results["table_parts"][tp_name] = posted
+
+        # 3) Постинг
+        if post:
+            posted = self.post_document(object_name, doc_id)
+            results["post"] = posted
+        return results
 
     def list_entity_sets(self) -> List[str]:
         """Return a list of all entity set names exposed by the OData service."""
@@ -535,6 +631,40 @@ VERIFY_SSL = os.getenv("ONEC_VERIFY_SSL", "false").lower() not in {"false", "0",
 _server = MCPServer(BASE_URL, username=USERNAME, password=PASSWORD, verify_ssl=VERIFY_SSL)
 
 mcp = FastMCP("mcp_1c")
+
+
+@mcp.tool()
+async def resolve_entity_name(user_entity: str, user_type: Optional[str] = None) -> Dict[str, Any]:
+    res = await asyncio.to_thread(_server.resolve_entity_name, user_entity, user_type)
+    return {"resolved": res}
+
+
+@mcp.tool()
+async def resolve_field_name(object_name: str, user_field: str) -> Dict[str, Any]:
+    res = await asyncio.to_thread(_server.resolve_field_name, object_name, user_field)
+    return {"resolved": res}
+
+
+@mcp.tool()
+async def ensure_entity(
+    user_type: str,
+    user_entity: str,
+    data_or_filters: Union[Dict[str, Any], str],
+    expand: Optional[str] = None,
+) -> Dict[str, Any]:
+    res = await asyncio.to_thread(_server.ensure_entity, user_type, user_entity, data_or_filters, expand)
+    return res
+
+
+@mcp.tool()
+async def create_document(
+    object_name: str,
+    header: Dict[str, Any],
+    rows: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    post: bool = False,
+) -> Dict[str, Any]:
+    res = await asyncio.to_thread(_server.create_document_with_rows, object_name, header, rows, post)
+    return res
 
 
 @mcp.tool()

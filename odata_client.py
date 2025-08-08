@@ -601,3 +601,58 @@ class ODataClient:
             metadata["entity_sets"] = {}
         self._metadata_cache = metadata
         return metadata
+
+
+    def _build_entity_uri(self, parent_name: str, parent_id: Union[str, Dict[str, str]]) -> str:
+        if isinstance(parent_id, dict):
+            key_parts = []
+            for k, v in parent_id.items():
+                if _is_guid(v):
+                    key_parts.append(f"{k}=guid'{v}'")
+                else:
+                    key_parts.append(f"{k}='{v}'")
+            key = "(" + ",".join(key_parts) + ")"
+        else:
+            key = f"(guid'{parent_id}')" if _is_guid(parent_id) else f"('{parent_id}')"
+        return f"{self.base_url}/{parent_name}{key}"
+
+    def add_table_part_rows(self, parent_name: str, parent_id: Union[str, Dict[str, str]],
+                            table_name: str, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        POST строки табличной части по пути:
+            <base>/<parent_name>(...)/<table_name>
+        Возвращает список кратких результатов по каждой строке.
+        """
+        uri = f"{self._build_entity_uri(parent_name, parent_id)}/{quote(table_name)}"
+        results: List[Dict[str, Any]] = []
+        for row in rows or []:
+            try:
+                r = self.session.post(uri, json=row, timeout=self.timeout, verify=self.verify_ssl,
+                                      headers=self.session.headers)
+                self._record_response(r)
+                ok = 200 <= r.status_code < 300
+                results.append({
+                    "http_code": r.status_code,
+                    "http_message": r.reason,
+                    "ok": ok,
+                    "row": row,
+                })
+            except requests.RequestException as exc:
+                results.append({
+                    "http_code": getattr(exc.response, "status_code", 0) or 0,
+                    "http_message": str(exc),
+                    "ok": False,
+                    "row": row,
+                })
+        return results
+
+    def get_table_part(self, parent_name: str, parent_id: Union[str, Dict[str, str]],
+                       table_name: str, params: Optional[Dict[str, Any]] = None) -> ODataResponse:
+        uri = f"{self._build_entity_uri(parent_name, parent_id)}/{quote(table_name)}"
+        try:
+            r = self.session.get(uri, params=params or None, timeout=self.timeout, verify=self.verify_ssl,
+                                 headers=self.session.headers)
+            self._record_response(r)
+            return ODataResponse(self, r)
+        finally:
+            pass

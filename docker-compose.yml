@@ -5,7 +5,7 @@ services:
     build: .
     command: uvicorn mcp_server:app --host 0.0.0.0 --port ${MCP_PORT:-9003}
     environment:
-      MCP_1C_BASE: ${MCP_1C_BASE:-}
+      MCP_1C_BASE: ${MCP_1C_BASE:-http://192.168.18.113/TEST19/odata/standard.odata}
       ONEC_USERNAME: ${ONEC_USERNAME:-}
       ONEC_PASSWORD: ${ONEC_PASSWORD:-}
       DEBUG: ${DEBUG:-false}
