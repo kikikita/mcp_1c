@@ -88,16 +88,26 @@ class SearchAgent:
                 # halve its content and retry, otherwise we abort with a
                 # user‑friendly error message.
                 logger.exception("LLM request failed: %s", e)
+                # When the model call errors out we only retry if the last
+                # message came from a tool.  Earlier versions blindly assumed
+                # that this was always the case which led to ``KeyError`` if the
+                # failure happened before any tool was invoked.  Now we verify
+                # the message structure first.
                 if msgs and msgs[-1].get("role") == "tool" and "tool_call_id" in msgs[-1]:
                     tool_msg = msgs.pop()
-                    truncated = tool_msg.get("content", "")[:len(tool_msg.get("content", "")) // 2]
+                    content = tool_msg.get("content", "")
+                    # Send back a shorter snippet of the tool output in case it
+                    # was too long for the model.  We keep roughly half of the
+                    # original text.
+                    truncated = content[: len(content) // 2]
                     msgs.append({
                         "role": "tool",
                         "tool_call_id": tool_msg.get("tool_call_id"),
                         "content": truncated,
                     })
-                    # retry the loop
+                    # retry the loop with the truncated tool response
                     continue
+
                 # If the failure happened on a user/system message, give up and
                 # surface the error to the caller so that the application does
                 # not crash with obscure stack traces.
