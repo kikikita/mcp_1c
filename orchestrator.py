@@ -1,5 +1,5 @@
 import os
-import json, asyncio
+import json, asyncio, re
 from typing import List, Dict, Any
 from openai import AsyncOpenAI
 from fastmcp import Client as MCP
@@ -64,6 +64,16 @@ def _json_ready(x: Any) -> Any:
     return repr(x)
 
 
+def _shorten(data: Any, limit: int = 500) -> str:
+    try:
+        txt = json.dumps(_json_ready(data), ensure_ascii=False)
+    except Exception:
+        txt = repr(data)
+    if len(txt) > limit:
+        return txt[:limit] + "..."
+    return txt
+
+
 def _unwrap_tool_output(result: Any) -> Any:
     """
     Попробовать достать «смысловую» часть из объекта fastmcp:
@@ -101,6 +111,31 @@ def _unwrap_tool_output(result: Any) -> Any:
 # ------------------------------------------------------
 
 
+DEFAULT_SYSTEM_PROMPT = (
+    "Ты работаешь с 1С только через инструменты. Запрещено придумывать данные,"
+    " сущности, поля и GUID. Любые факты берутся только из вызванных инструментов;"
+    " если данных нет — отвечай 'не найдено'. Все действия выполняй через tool_calls,"
+    " не помещай псевдо-вызовы в текстовые сообщения."
+)
+
+
+def _looks_like_pseudo_call(text: str) -> bool:
+    if not text:
+        return False
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict) and (
+            obj.get("type") == "function"
+            or "tool_name" in obj
+            or ("name" in obj and "arguments" in obj)
+        ):
+            return True
+    except Exception:
+        pass
+    patterns = [r'"type"\s*:\s*"function"', r'"tool_call"', r'"function_call"']
+    return any(re.search(p, text) for p in patterns)
+
+
 class SearchAgent:
     def __init__(self, mcp_cmd: str,
                  llm_url: str = "http://localhost:8000/v1",
@@ -124,9 +159,10 @@ class SearchAgent:
                   system: str | None = None,
                   history: List[Dict[str, str]] | None = None) -> str:
         logger.info("User prompt: %s", prompt)
-        msgs: List[Dict[str, str]] = []
+        base_system = DEFAULT_SYSTEM_PROMPT
         if system:
-            msgs.append({"role": "system", "content": system})
+            base_system = base_system + "\n" + system
+        msgs: List[Dict[str, str]] = [{"role": "system", "content": base_system}]
         if history:
             msgs.extend(history)
         msgs.append({"role": "user", "content": prompt})
@@ -161,13 +197,14 @@ class SearchAgent:
                     args = json.loads(call.function.arguments or "{}")
                     logger.info("Calling tool %s with args %s", call.function.name, args)
                     result = await self.mcp.call_tool(call.function.name, args)
+                    raw_str = _shorten(result)
+                    logger.info("Tool %s raw output %s", call.function.name, raw_str)
 
                     raw_output = _unwrap_tool_output(result)
                     jsonable_output = _json_ready(raw_output)
 
                     logger.info("Tool %s returned (normalized) %s", call.function.name, jsonable_output)
 
-                    # важно: content должен быть СТРОКОЙ
                     msgs.append({
                         "role": "tool",
                         "tool_call_id": call.id,
@@ -175,11 +212,18 @@ class SearchAgent:
                     })
                 continue
 
+            if _looks_like_pseudo_call(msg.content or ""):
+                logger.warning("Pseudo tool call detected: %s", msg.content)
+                msgs.append({"role": "system",
+                             "content": "Используй tool_calls для обращения к инструментам и не помещай JSON в текст."})
+                continue
+
             if not msg.content or "</Finished>" not in msg.content:
                 msgs.append({"role": "user",
                              "content": "Заверши кратким результатом и тегом </Finished>."})
                 retries += 1
                 if retries > 3:
+                    logger.info("Final response: %s", msg.content)
                     return (msg.content or "Нет ответа") + " </Finished>"
                 continue
 
