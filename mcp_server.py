@@ -5,6 +5,8 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Union, Tuple
 import logging
+import json
+import functools
 
 from mcp.server.fastmcp import FastMCP
 from odata_client import ODataClient, _is_guid
@@ -12,6 +14,64 @@ from log_config import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+
+# -------------------------- JSON utils & logging --------------------------
+
+def _json_ready(x: Any) -> Any:
+    """Convert dataclasses/pydantic/objects to JSON-serializable structures."""
+    if x is None or isinstance(x, (str, int, float, bool)):
+        return x
+    if isinstance(x, (list, tuple)):
+        return [_json_ready(i) for i in x]
+    if isinstance(x, dict):
+        return {k: _json_ready(v) for k, v in x.items()}
+    if hasattr(x, "model_dump"):
+        try:
+            return _json_ready(x.model_dump())
+        except Exception:
+            pass
+    try:
+        from dataclasses import is_dataclass, asdict
+
+        if is_dataclass(x):
+            return _json_ready(asdict(x))
+    except Exception:
+        pass
+    if hasattr(x, "dict") and callable(getattr(x, "dict")):
+        try:
+            return _json_ready(x.dict())
+        except Exception:
+            pass
+    if hasattr(x, "__dict__"):
+        try:
+            return _json_ready(vars(x))
+        except Exception:
+            pass
+    return repr(x)
+
+
+def _shorten(data: Any, limit: int = 500) -> str:
+    try:
+        txt = json.dumps(_json_ready(data), ensure_ascii=False)
+    except Exception:
+        txt = repr(data)
+    if len(txt) > limit:
+        return txt[:limit] + "..."
+    return txt
+
+
+def logged_tool(func):
+    """Decorator to log tool calls and results."""
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        logger.info("MCP tool %s called with %s", func.__name__, _shorten({"args": args, "kwargs": kwargs}))
+        res = await func(*args, **kwargs)
+        logger.info("MCP tool %s result %s", func.__name__, _shorten(res))
+        return res
+
+    return wrapper
 
 
 # -----------------------------------------------------------------------------
@@ -154,12 +214,12 @@ class MCPServer:
         """Привести ODataResponse к унифицированному словарю."""
         data = response.values() if hasattr(response, "values") else None
         return {
-            "http_code": client.get_http_code(),
-            "http_message": client.get_http_message(),
-            "odata_error_code": client.get_error_code(),
-            "odata_error_message": client.get_error_message(),
-            "last_id": client.get_last_id(),
-            "data": data,
+            "http_code": _json_ready(client.get_http_code()),
+            "http_message": _json_ready(client.get_http_message()),
+            "odata_error_code": _json_ready(client.get_error_code()),
+            "odata_error_message": _json_ready(client.get_error_message()),
+            "last_id": _json_ready(client.get_last_id()),
+            "data": _json_ready(data),
         }
 
     # --------------------- Метаданные и резолверы ---------------------
@@ -468,7 +528,7 @@ class MCPServer:
         if post:
             result["post"] = self.post_document(object_name, doc_id)
 
-        return result
+        return _json_ready(result)
 
 
 # -----------------------------------------------------------------------------
@@ -484,30 +544,35 @@ _server = MCPServer(BASE_URL, username=USERNAME, password=PASSWORD, verify_ssl=V
 mcp = FastMCP("mcp_1c")
 
 
+@logged_tool
 @mcp.tool()
 async def list_entity_sets() -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.list_entity_sets)
-    return {"entity_sets": data}
+    return _json_ready({"entity_sets": data})
 
 
+@logged_tool
 @mcp.tool()
 async def get_schema(object_name: str) -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.get_schema, object_name)
-    return data
+    return _json_ready(data)
 
 
+@logged_tool
 @mcp.tool()
 async def resolve_entity_name(user_entity: str, user_type: Optional[str] = None) -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.resolve_entity_name, user_entity, user_type)
-    return {"resolved": data}
+    return _json_ready({"resolved": data})
 
 
+@logged_tool
 @mcp.tool()
 async def resolve_field_name(object_name: str, user_field: str) -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.resolve_field_name, object_name, user_field)
-    return {"resolved": data}
+    return _json_ready({"resolved": data})
 
 
+@logged_tool
 @mcp.tool()
 async def list_objects(
     object_name: str,
@@ -516,9 +581,10 @@ async def list_objects(
     expand: Optional[str] = None,
 ) -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.list_objects, object_name, filters, top, expand)
-    return data
+    return _json_ready(data)
 
 
+@logged_tool
 @mcp.tool()
 async def find_object(
     object_name: str,
@@ -526,9 +592,10 @@ async def find_object(
     expand: Optional[str] = None,
 ) -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.find_object, object_name, filters, expand)
-    return data
+    return _json_ready(data)
 
 
+@logged_tool
 @mcp.tool()
 async def create_object(
     object_name: str,
@@ -536,9 +603,10 @@ async def create_object(
     expand: Optional[str] = None,
 ) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.create_object, object_name, data, expand)
-    return res
+    return _json_ready(res)
 
 
+@logged_tool
 @mcp.tool()
 async def update_object(
     object_name: str,
@@ -547,9 +615,10 @@ async def update_object(
     expand: Optional[str] = None,
 ) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.update_object, object_name, object_id, data, expand)
-    return res
+    return _json_ready(res)
 
 
+@logged_tool
 @mcp.tool()
 async def delete_object(
     object_name: str,
@@ -557,27 +626,30 @@ async def delete_object(
     physical_delete: bool = False,
 ) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.delete_object, object_name, object_id, physical_delete)
-    return res
+    return _json_ready(res)
 
 
+@logged_tool
 @mcp.tool()
 async def post_document(
     object_name: str,
     object_id: Union[str, Dict[str, str]],
 ) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.post_document, object_name, object_id)
-    return res
+    return _json_ready(res)
 
 
+@logged_tool
 @mcp.tool()
 async def unpost_document(
     object_name: str,
     object_id: Union[str, Dict[str, str]],
 ) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.unpost_document, object_name, object_id)
-    return res
+    return _json_ready(res)
 
 
+@logged_tool
 @mcp.tool()
 async def search_object(
     user_type: str,
@@ -587,9 +659,10 @@ async def search_object(
     expand: Optional[str] = None,
 ) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.search_object, user_type, user_entity, user_filters, top, expand)
-    return res
+    return _json_ready(res)
 
 
+@logged_tool
 @mcp.tool()
 async def ensure_entity(
     user_type: str,
@@ -598,9 +671,10 @@ async def ensure_entity(
     expand: Optional[str] = None,
 ) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.ensure_entity, user_type, user_entity, data_or_filters, expand)
-    return res
+    return _json_ready(res)
 
 
+@logged_tool
 @mcp.tool()
 async def create_document(
     object_name: str,
@@ -609,7 +683,7 @@ async def create_document(
     post: bool = False,
 ) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.create_document_with_rows, object_name, header, rows, post)
-    return res
+    return _json_ready(res)
 
 
 # ASGI-приложение
