@@ -1,15 +1,3 @@
-# mcp_server.py
-# -*- coding: utf-8 -*-
-"""
-Enhanced MCP server exposing 1C OData operations as callable tools for LLM agents.
-
-Главные отличия:
-- Все инструменты возвращают Result(data=...), чтобы оркестратор и модель получали нормальный JSON.
-- Фильтры по GUID принимаются как в «сыром» виде, так и в виде строки OData guid'...'.
-- Универсальные резолверы: имя сущности, имя поля, автоматическое сопоставление ссылок *_Key.
-- Высокоуровневые операции: search_object, ensure_entity, create_document (с табличными частями).
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -18,7 +6,7 @@ import re
 from typing import Any, Dict, List, Optional, Union, Tuple
 import logging
 
-from mcp.server.fastmcp import FastMCP, Result
+from mcp.server.fastmcp import FastMCP
 from odata_client import ODataClient, _is_guid
 from log_config import setup_logging
 
@@ -124,18 +112,13 @@ class MCPServer:
 
     @staticmethod
     def _build_filter(filters: Union[Dict[str, Any], List[str], str, None]) -> Optional[str]:
-        """Собрать OData $filter.
+        """Собрать OData $filter из dict/list/str.
 
-        Поддержка:
-        - dict -> "Field eq value and Field2 gt 0 ..."
-        - list[str] -> "expr1 and expr2 ..."
-        - str -> вернуть как есть
-        - GUID: можно передать «сырой» xxxxxxxx-... или уже `guid'...'\`
+        Поддержка GUID как сырой строки и как "guid'...'" .
         """
         if filters is None:
             return None
         if isinstance(filters, str):
-            # уже готовая строка $filter
             return filters
         if isinstance(filters, list):
             return " and ".join([f for f in filters if f])
@@ -150,13 +133,10 @@ class MCPServer:
                 elif isinstance(value, (int, float)):
                     exprs.append(f"{key} eq {value}")
                 elif isinstance(value, str):
-                    # Если пользователь прислал готовый фрагмент сравнения (с операторами), не экранируем
                     if re.search(r"\s(and|or|eq|ne|gt|lt|ge|le)\s", value, re.IGNORECASE):
                         exprs.append(f"{key} {value}")
-                    # Уже обёрнутый вид guid'...'
                     elif re.fullmatch(r"guid'[0-9a-fA-F-]{36}'", value):
                         exprs.append(f"{key} eq {value}")
-                    # «сырой» GUID
                     elif _is_guid(value):
                         exprs.append(f"{key} eq guid'{value}'")
                     else:
@@ -214,7 +194,7 @@ class MCPServer:
             for p in prefixes:
                 if p and not es.startswith(p):
                     continue
-                suffix = es[len(p) :] if p else es
+                suffix = es[len(p):] if p else es
                 s_norm = re.sub(r"\s+", "", suffix).lower()
                 if s_norm == normalized:
                     return es
@@ -285,8 +265,7 @@ class MCPServer:
 
     def _resolve_refs_in_payload(self, object_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Подставить GUID'ы в *_Key полях, если пришла спецификация ссылки."""
-        schema = self.get_entity_schema(object_name) or {}
-        props = (schema.get("properties") or {})
+        _ = self.get_entity_schema(object_name)  # чтобы прогреть метаданные; поле->синоним мы всё равно резолвим сами
         out: Dict[str, Any] = {}
 
         for k, v in (payload or {}).items():
@@ -348,7 +327,6 @@ class MCPServer:
         builder = getattr(self.client, object_name)
         if expand:
             builder = builder.expand(expand)
-        # подставим ссылки, если нужно
         resolved = self._resolve_refs_in_payload(object_name, data or {})
         response = builder.create(resolved)
         return self._result_from_response(response, self.client)
@@ -494,7 +472,7 @@ class MCPServer:
 
 
 # -----------------------------------------------------------------------------
-# FastMCP: определение инструментов (все возвращают Result(data=...))
+# FastMCP: инструменты (возвращают dict, без Result)
 # -----------------------------------------------------------------------------
 
 BASE_URL = os.getenv("MCP_1C_BASE", "")
@@ -507,31 +485,27 @@ mcp = FastMCP("mcp_1c")
 
 
 @mcp.tool()
-async def list_entity_sets() -> Result:
-    """Вернуть список всех сущностей (EntitySets)."""
+async def list_entity_sets() -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.list_entity_sets)
-    return Result(data={"entity_sets": data})
+    return {"entity_sets": data}
 
 
 @mcp.tool()
-async def get_schema(object_name: str) -> Result:
-    """Вернуть схему (свойства и типы) указанной сущности."""
+async def get_schema(object_name: str) -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.get_schema, object_name)
-    return Result(data=data)
+    return data
 
 
 @mcp.tool()
-async def resolve_entity_name(user_entity: str, user_type: Optional[str] = None) -> Result:
-    """Преобразовать «человеческое» имя + тип в имя сущности OData (например, Catalog_Номенклатура)."""
+async def resolve_entity_name(user_entity: str, user_type: Optional[str] = None) -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.resolve_entity_name, user_entity, user_type)
-    return Result(data={"resolved": data})
+    return {"resolved": data}
 
 
 @mcp.tool()
-async def resolve_field_name(object_name: str, user_field: str) -> Result:
-    """Преобразовать «человеческое» имя поля в реальное свойство сущности."""
+async def resolve_field_name(object_name: str, user_field: str) -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.resolve_field_name, object_name, user_field)
-    return Result(data={"resolved": data})
+    return {"resolved": data}
 
 
 @mcp.tool()
@@ -540,10 +514,9 @@ async def list_objects(
     filters: Optional[Union[str, Dict[str, Any], List[str]]] = None,
     top: Optional[int] = None,
     expand: Optional[str] = None,
-) -> Result:
-    """Вернуть список объектов сущности (с фильтром/$top/$expand)."""
+) -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.list_objects, object_name, filters, top, expand)
-    return Result(data=data)
+    return data
 
 
 @mcp.tool()
@@ -551,10 +524,9 @@ async def find_object(
     object_name: str,
     filters: Optional[Union[str, Dict[str, Any], List[str]]] = None,
     expand: Optional[str] = None,
-) -> Result:
-    """Вернуть первый объект сущности, соответствующий фильтру."""
+) -> Dict[str, Any]:
     data = await asyncio.to_thread(_server.find_object, object_name, filters, expand)
-    return Result(data=data)
+    return data
 
 
 @mcp.tool()
@@ -562,10 +534,9 @@ async def create_object(
     object_name: str,
     data: Dict[str, Any],
     expand: Optional[str] = None,
-) -> Result:
-    """Создать объект сущности."""
+) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.create_object, object_name, data, expand)
-    return Result(data=res)
+    return res
 
 
 @mcp.tool()
@@ -574,10 +545,9 @@ async def update_object(
     object_id: Union[str, Dict[str, str]],
     data: Dict[str, Any],
     expand: Optional[str] = None,
-) -> Result:
-    """Обновить существующий объект."""
+) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.update_object, object_name, object_id, data, expand)
-    return Result(data=res)
+    return res
 
 
 @mcp.tool()
@@ -585,30 +555,27 @@ async def delete_object(
     object_name: str,
     object_id: Union[str, Dict[str, str]],
     physical_delete: bool = False,
-) -> Result:
-    """Удалить объект (по умолчанию — логическое удаление через DeletionMark)."""
+) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.delete_object, object_name, object_id, physical_delete)
-    return Result(data=res)
+    return res
 
 
 @mcp.tool()
 async def post_document(
     object_name: str,
     object_id: Union[str, Dict[str, str]],
-) -> Result:
-    """Провести документ."""
+) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.post_document, object_name, object_id)
-    return Result(data=res)
+    return res
 
 
 @mcp.tool()
 async def unpost_document(
     object_name: str,
     object_id: Union[str, Dict[str, str]],
-) -> Result:
-    """Отменить проведение документа."""
+) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.unpost_document, object_name, object_id)
-    return Result(data=res)
+    return res
 
 
 @mcp.tool()
@@ -618,10 +585,9 @@ async def search_object(
     user_filters: Optional[Union[str, Dict[str, Any], List[str]]] = None,
     top: Optional[int] = 1,
     expand: Optional[str] = None,
-) -> Result:
-    """Найти объект(ы) с резолвом имени сущности и синонимов полей."""
+) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.search_object, user_type, user_entity, user_filters, top, expand)
-    return Result(data=res)
+    return res
 
 
 @mcp.tool()
@@ -630,10 +596,9 @@ async def ensure_entity(
     user_entity: str,
     data_or_filters: Union[Dict[str, Any], str],
     expand: Optional[str] = None,
-) -> Result:
-    """Найти элемент, или создать при отсутствии (по dict-данным)."""
+) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.ensure_entity, user_type, user_entity, data_or_filters, expand)
-    return Result(data=res)
+    return res
 
 
 @mcp.tool()
@@ -642,10 +607,9 @@ async def create_document(
     header: Dict[str, Any],
     rows: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     post: bool = False,
-) -> Result:
-    """Создать документ; заполнить табличные части; при необходимости — провести."""
+) -> Dict[str, Any]:
     res = await asyncio.to_thread(_server.create_document_with_rows, object_name, header, rows, post)
-    return Result(data=res)
+    return res
 
 
 # ASGI-приложение
