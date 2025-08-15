@@ -1,84 +1,98 @@
-# MCP Examples
+Вот структурированная и сжатая версия README в профессиональном стиле.
 
-This repository showcases several experiments built with the `fastmcp` framework.
-Only the `MCP_1C` directory is actively maintained; the others are kept for reference.
+```markdown
+# mcp_1c
 
-## Repository layout
+AI финансист
 
-- **MCP_1C** – sample integration with 1C. Contains an MCP server with demo
-  REST endpoints and a simple orchestrator. This is the recommended starting
-  point for new projects.
+---
 
-## Directory overview
+## 1. Структура проекта
 
-* `MCP_1C` – integration examples for 1C. Includes a `connection_test.py` script for checking the `/hs/mcp/` endpoints.
-
-## Installation
-
-Install the dependencies with pip:
-
-```bash
-pip install -r requirements.txt
 ```
 
-## Running the MCP_1C server
+mcp\_1c/
+├─ docker-compose.yml       # Запуск MCP-сервера и веб-UI
+├─ gradio\_app.py             # Веб-интерфейс чата
+├─ orchestrator.py           # Агент для LLM и MCP
+├─ mcp\_server.py             # ASGI-сервер с MCP-инструментами
+├─ odata\_client.py           # Клиент OData для 1С
+├─ pdf\_parser.py             # Извлечение текста из PDF
+├─ prompt.py                 # Системный промпт для LLM
+├─ vLLM/
+│  ├─ start\_vllm.sh          # Скрипт запуска LLM-сервера
+│  └─ xlam\_tool\_call\_parser.py # Парсер tool-calls для vLLM
+└─ logs/                     # Логи vLLM
 
-1. Configure environment variables for connecting to the 1C OData service:
+````
 
-   - `MCP_1C_BASE` – базовый адрес OData, например `http://host/infobase/odata/standard.odata`.
-   - `ONEC_USERNAME` и `ONEC_PASSWORD` – логин и пароль пользователя 1С.
+---
 
-   Переменные можно задать через файл `.env` или перед запуском сервиса.
-2. Start the server:
+## 2. Запуск
 
-```bash
-python MCP_1C/mcp_server.py
-```
-
-The MCP API will be available on port 9000 by default. Clients can connect to `/hs/mcp/` on your 1C server to invoke the tools exposed by MCP.
-
-### Example request
-
-Once the server is running you can call the demo endpoints from another
-terminal:
-
-```bash
-curl http://localhost:9000/1c/plan_accounts
-```
-
-This returns a JSON list of account objects. Similar requests can be sent to
-`/1c/turnover` with query parameters `account`, `periodStart` and `periodEnd`.
-
-## Running with Docker
-
-The repository includes a `Dockerfile` and `docker-compose.yml` for a
-containerised setup. The stack launches two services:
-
-- **mcp-server** – FastAPI service exposing the MCP tools.
-- **gradio-app** – web UI for interacting with the orchestrator.
-
-The LLM (vLLM) server must be run separately on the host machine. Use the
-provided script:
+### 2.1 Подготовка LLM-сервера (vLLM)
 
 ```bash
-./vLLM/start_vllm.sh
+cd vLLM
+sh start_vllm.sh
+````
+
+* Модель: `Salesforce/xLAM-2-32b-fc-r`
+* Порт: `8000`
+* Лог: `../logs/vllm.log`
+
+---
+
+### 2.2 Конфигурация окружения
+
+Создайте файл `.env` в корне проекта:
+
+```env
+MCP_URL=http://localhost:9003/mcp/
+MCP_1C_BASE=http://192.168.18.113/TEST19/odata/standard.odata
+ONEC_USERNAME=username
+ONEC_PASSWORD=password
+GRADIO_PORT=7860
+LLM_SERVER_URL=http://host.docker.internal:8000/v1
+OPENAI_API_KEY=empty
+DEBUG=false
+LOGO_PATH=logo.jpg
 ```
 
-After the model is up, start the remaining services:
+---
+
+### 2.3 Запуск проекта
 
 ```bash
 docker compose up --build
 ```
 
-Default ports are `9000` for the MCP server, `7860` for the Gradio UI and `8000`
-for the local vLLM server. If any port is busy you can override them via
-environment variables when running Compose:
+После запуска:
 
-```bash
-MCP_PORT=9100 GRADIO_PORT=7861 docker compose up --build
-```
+* **Gradio UI**: [http://localhost:7860](http://localhost:7860)
+* **MCP-сервер**: [http://localhost:9003/mcp/](http://localhost:9003/mcp/)
 
-The Gradio interface will then be available at
-`http://localhost:${GRADIO_PORT}`. Set `MCP_1C_BASE`, `ONEC_USERNAME` and
-`ONEC_PASSWORD` to connect to a real 1C instance.
+---
+
+## 3. Основные модули
+
+| Модуль                               | Назначение                                                          |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| **gradio\_app.py**                   | Веб-чат с загрузкой PDF, отправляет запросы LLM и MCP.              |
+| **orchestrator.py**                  | Агент, обрабатывающий tool-calls LLM и вызывающий MCP-инструменты.  |
+| **mcp\_server.py**                   | MCP-инструменты для работы с 1С: метаданные, поиск, CRUD-документы. |
+| **odata\_client.py**                 | Запросы к OData API 1С (GET/POST/UPDATE/DELETE).                    |
+| **pdf\_parser.py**                   | Извлечение текста из PDF (Tesseract / PaddleOCR).                   |
+| **prompt.py**                        | Системный промпт с правилами и инструкциями для LLM.                |
+| **vLLM/xlam\_tool\_call\_parser.py** | Приведение JSON tool-вызовов к формату OpenAI API.                  |
+| **vLLM/start\_vllm.sh**              | Запуск LLM-сервера с плагином парсера.                              |
+
+---
+
+## 4. Логи и отладка
+
+* **vLLM**: `logs/vllm.log`
+* **MCP-сервер**: вывод в stdout, все вызовы инструментов логируются.
+
+---
 
