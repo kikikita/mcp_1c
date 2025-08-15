@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  mcp-server:
+    build: .
+    command: uvicorn mcp_server:app --host 0.0.0.0 --port ${MCP_PORT:-9003}
+    env_file:
+      - .env
+    ports:
+      - "${MCP_PORT:-9003}:${MCP_PORT:-9003}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  gradio-app:
+    build: .
+    command: python gradio_app.py
+    env_file:
+      - .env
+    ports:
+      - "${GRADIO_PORT:-7860}:${GRADIO_PORT:-7860}"
+    depends_on:
+      - mcp-server
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
