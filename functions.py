@@ -60,8 +60,8 @@ def get_entities():
     '''
     client = ODataClient(
         base_url="http://192.168.18.113/TEST19/odata/standard.odata",
-        username="nikita",
-        password="nikita2000",
+        username="login",
+        password="password",
     )
     meta = client.get_metadata()
     entity_sets = (meta.get("entity_sets") or {}).keys()
@@ -82,8 +82,8 @@ def get_schema(
     '''
     client = ODataClient(
         base_url="http://192.168.18.113/TEST19/odata/standard.odata",
-        username="nikita",
-        password="nikita2000",
+        username="login",
+        password="password",
     )
     meta = client.get_metadata()
     schema = (meta.get("entity_sets") or {}).get(entity_name, {})
@@ -106,8 +106,8 @@ def get_first_records(
     '''
     client = ODataClient(
         base_url="http://192.168.18.113/TEST19/odata/standard.odata",
-        username="nikita",
-        password="nikita2000",
+        username="login",
+        password="password",
     )
 
     entity = getattr(client, entity_name)
@@ -143,8 +143,8 @@ def find_record(
     '''
     client = ODataClient(
         base_url="http://192.168.18.113/TEST19/odata/standard.odata",
-        username="nikita",
-        password="nikita2000",
+        username="login",
+        password="password",
     )
 
     entity = getattr(client, entity_name)
@@ -172,8 +172,8 @@ def create_record(
     '''
     client = ODataClient(
         base_url="http://192.168.18.113/TEST19/odata/standard.odata",
-        username="nikita",
-        password="nikita2000",
+        username="login",
+        password="password",
     )
 
     try:
@@ -202,8 +202,8 @@ def post_record(
     '''
     client = ODataClient(
         base_url="http://192.168.18.113/TEST19/odata/standard.odata",
-        username="nikita",
-        password="nikita2000",
+        username="login",
+        password="password",
     )
         
     try:
@@ -283,8 +283,8 @@ def get_records_by_date_range(
     """
     client = ODataClient(
         base_url="http://192.168.18.113/TEST19/odata/standard.odata",
-        username="nikita",
-        password="nikita2000",
+        username="login",
+        password="password",
     )
     
     entity = getattr(client, entity_name)
@@ -346,8 +346,8 @@ def get_records_with_expand(
     """
     client = ODataClient(
         base_url="http://192.168.18.113/TEST19/odata/standard.odata",
-        username="nikita",
-        password="nikita2000",
+        username="login",
+        password="password",
     )
     
     entity = getattr(client, entity_name)
