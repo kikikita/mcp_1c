@@ -1,30 +1,25 @@
-Вот структурированная и сжатая версия README в профессиональном стиле.
+# mcp\_1c
 
-```markdown
-# mcp_1c
-
-AI финансист
+AI Финансист
 
 ---
 
 ## 1. Структура проекта
 
+```text
+mcp_1c/
+├── docker-compose.yml           # запуск MCP-сервера и веб-UI
+├── gradio_app.py                # веб-интерфейс чата
+├── orchestrator.py              # агент LLM↔MCP
+├── mcp_server.py                # ASGI-сервер с MCP-инструментами
+├── odata_client.py              # клиент OData для 1С
+├── pdf_parser.py                # извлечение текста из PDF
+├── prompt.py                    # системный промпт для LLM
+├── vLLM/
+│   ├── start_vllm.sh            # запуск LLM-сервера
+│   └── xlam_tool_call_parser.py # парсер tool-calls для vLLM
+└── logs/                        # логи vLLM
 ```
-
-mcp\_1c/
-├─ docker-compose.yml       # Запуск MCP-сервера и веб-UI
-├─ gradio\_app.py             # Веб-интерфейс чата
-├─ orchestrator.py           # Агент для LLM и MCP
-├─ mcp\_server.py             # ASGI-сервер с MCP-инструментами
-├─ odata\_client.py           # Клиент OData для 1С
-├─ pdf\_parser.py             # Извлечение текста из PDF
-├─ prompt.py                 # Системный промпт для LLM
-├─ vLLM/
-│  ├─ start\_vllm.sh          # Скрипт запуска LLM-сервера
-│  └─ xlam\_tool\_call\_parser.py # Парсер tool-calls для vLLM
-└─ logs/                     # Логи vLLM
-
-````
 
 ---
 
