@@ -503,35 +503,35 @@ class ODataClient:
     def get_metadata(self) -> Dict[str, Any]:
         """
         Retrieve and cache OData metadata (EDMX v2/v3/v4 or service document).
-        Namespace-agnostic parsing: match tags via .endswith().
-        Returns dict: {"raw": <xml>, "entity_sets": {Name: {"entity_type": str|None, "properties": {...}}}}
+        Returns dict: {Name: entity_type or None}
         """
         if self._metadata_cache is not None and (self._metadata_cache.get("entity_sets") or {}):
-            return self._metadata_cache
+            # Return only entity_sets as {Name: entity_type or None}
+            return {k: v.get("entity_type") for k, v in self._metadata_cache["entity_sets"].items()}
 
         url = f"{self.base_url.strip()}/$metadata"
         headers = self._merge_headers({"Accept": "application/xml"})
 
-        metadata: Dict[str, Any] = {"raw": "", "entity_sets": {}}
+        entity_sets: Dict[str, Optional[str]] = {}
 
         # 1) request $metadata
         sess = self._get_session_for_request()
         try:
             resp = sess.get(url, timeout=self.timeout, verify=self.verify_ssl, headers=headers, allow_redirects=True)
             self._record_response(resp)
-            metadata["raw"] = resp.text
+            raw = resp.text
         except requests.RequestException as exc:
             self.http_code = getattr(exc.response, "status_code", None) or 0
             self.http_message = str(exc)
             self.odata_code = None
             self.odata_message = None
-            self._metadata_cache = metadata
+            self._metadata_cache = {"entity_sets": {}}
             if self.use_ephemeral_session:
                 try:
                     sess.close()
                 except Exception:
                     pass
-            return metadata
+            return {}
         finally:
             if self.use_ephemeral_session:
                 try:
@@ -545,44 +545,18 @@ class ODataClient:
         try:
             import xml.etree.ElementTree as ET
 
-            root = ET.fromstring(metadata["raw"])
+            root = ET.fromstring(raw)
 
-            # 2.1 map EntityType -> properties
-            etype_props: Dict[str, Dict[str, Any]] = {}
-            for node in root.iter():
-                if node.tag.endswith("EntityType"):
-                    et_name = node.get("Name")
-                    if not et_name:
-                        continue
-                    props: Dict[str, Dict[str, Any]] = {}
-                    for child in list(node):
-                        if child.tag.endswith("Property"):
-                            pname = child.get("Name")
-                            ptype = child.get("Type")
-                            nullable = (child.get("Nullable", "true").lower() == "true")
-                            if pname:
-                                props[pname] = {"type": ptype, "nullable": nullable}
-                    etype_props[et_name] = props
-
-            # 2.2 read EntitySet(s) from any EntityContainer
-            entity_sets: Dict[str, Dict[str, Any]] = {}
+            # 2.1 read EntitySet(s) from any EntityContainer
             for node in root.iter():
                 if node.tag.endswith("EntityContainer"):
                     for es in list(node):
                         if es.tag.endswith("EntitySet"):
                             name = es.get("Name")
                             etype = es.get("EntityType")
-                            if not name:
-                                continue
-                            et_short = (etype or "").split(".")[-1]
-                            entity_sets[name] = {
-                                "entity_type": etype,
-                                "properties": etype_props.get(et_short, {}),
-                            }
-
-            if entity_sets:
-                metadata["entity_sets"] = entity_sets
-                parsed = True
+                            if name:
+                                entity_sets[name] = etype
+            parsed = bool(entity_sets)
 
             # 3) If nothing found, try APP service document
             if not parsed:
@@ -590,8 +564,8 @@ class ODataClient:
                 for coll in root.findall(".//app:collection", ns_app):
                     href = coll.get("href")
                     if href:
-                        metadata["entity_sets"][href] = {"entity_type": None, "properties": {}}
-                parsed = bool(metadata["entity_sets"])
+                        entity_sets[href] = None
+                parsed = bool(entity_sets)
         except Exception:
             parsed = False
 
@@ -601,7 +575,6 @@ class ODataClient:
             try:
                 resp2 = sess2.get(self.base_url.strip(), timeout=self.timeout, verify=self.verify_ssl, headers=headers, allow_redirects=True)
                 self._record_response(resp2)
-                metadata["raw"] = resp2.text
                 try:
                     import xml.etree.ElementTree as ET
 
@@ -610,9 +583,9 @@ class ODataClient:
                     for coll in root2.findall(".//app:collection", ns_app):
                         href = coll.get("href")
                         if href:
-                            metadata["entity_sets"][href] = {"entity_type": None, "properties": {}}
+                            entity_sets[href] = None
                 except Exception:
-                    metadata["entity_sets"] = {}
+                    entity_sets = {}
             except requests.RequestException as exc:
                 self.http_code = getattr(exc.response, "status_code", None) or 0
                 self.http_message = str(exc)
@@ -625,8 +598,9 @@ class ODataClient:
                     except Exception:
                         pass
 
-        self._metadata_cache = metadata
-        return metadata
+        self._metadata_cache = {"entity_sets": {k: {"entity_type": v} for k, v in entity_sets.items()}}
+        # Return only entity_sets as {Name: entity_type or None}
+        return {k: v for k, v in entity_sets.items()}
 
     # ----- table parts helpers -----
 
