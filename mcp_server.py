@@ -9,6 +9,8 @@ import logging
 import json
 import functools
 from datetime import datetime
+from typing import Annotated
+from pydantic import Field
 
 from mcp.server.fastmcp import FastMCP
 from odata_client import ODataClient, _is_guid
@@ -225,7 +227,7 @@ class MCPServer:
     # ------------------------------------------------------------------
     # Metadata & resolvers
     # ------------------------------------------------------------------
-    def list_entity_sets(self) -> Dict[str, Any]:
+    def get_server_entity_sets(self) -> Dict[str, Any]:
         try:
             meta = self.client.get_metadata()
         except Exception as e:
@@ -245,7 +247,7 @@ class MCPServer:
             "entity_sets": list((meta.get("entity_sets") or {}).keys()),
         }
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_server_metadata(self) -> Dict[str, Any]:
         try:
             meta = self.client.get_metadata()
         except Exception as e:
@@ -890,7 +892,7 @@ mcp = FastMCP("mcp_1c_improved")
 
 @logged_tool
 @mcp.tool()
-async def list_entity_sets() -> Dict[str, Any]:
+async def mcp_tool_entity_sets() -> Dict[str, Any]:
     """
     Вернуть список доступных наборов сущностей (entity sets) сервиса OData 1С.
     Вход: нет.
@@ -899,13 +901,15 @@ async def list_entity_sets() -> Dict[str, Any]:
       - odata_error_code:str|null, odata_error_message:str|null
       - entity_sets:list[str] — имена наборов (например, "Catalog_Контрагенты", "Document_ПлатежноеПоручение").
     """
-    data = await asyncio.to_thread(_server.list_entity_sets)
+    data = await asyncio.to_thread(_server.get_server_entity_sets)
     return _json_ready(data)
 
 
 @logged_tool
 @mcp.tool()
-async def get_schema(object_name: str) -> Dict[str, Any]:
+async def get_schema(
+    object_name: Annotated[str, Field(description="точное имя entity set", max_length=256)]
+) -> Dict[str, Any]:
     """
     Получить схему (properties) для заданного набора сущностей.
     Args:
@@ -920,7 +924,7 @@ async def get_schema(object_name: str) -> Dict[str, Any]:
 
 @logged_tool
 @mcp.tool()
-async def get_metadata() -> Dict[str, Any]:
+async def mcp_tool_metadata() -> Dict[str, Any]:
     """
     Получить полные метаданные OData: разобранные entity sets.
     Вход: нет.
@@ -929,13 +933,16 @@ async def get_metadata() -> Dict[str, Any]:
       - raw:str|None — исходный XML,
       - entity_sets:dict — имя -> схема.
     """
-    data = await asyncio.to_thread(_server.get_metadata)
+    data = await asyncio.to_thread(_server.get_server_metadata)
     return _json_ready(data)
 
 
 @logged_tool
 @mcp.tool()
-async def resolve_entity_name(user_entity: str, user_type: Optional[str] = None) -> Dict[str, Any]:
+async def resolve_entity_name(
+    user_entity: Annotated[str, Field(description="Название сущности например, Контрагенты, Платежное поручение", max_length=256)],
+    user_type: Annotated[str, Field(description="Подсказка типа: справочник/документ/регистр/константа и т.п.", max_length=256)] = None
+) -> Dict[str, Any]:
     """
     Нормализовать «человеческое» имя сущности (и опциональный тип) в точное имя entity set.
     Args:
@@ -959,7 +966,10 @@ async def resolve_entity_name(user_entity: str, user_type: Optional[str] = None)
 
 @logged_tool
 @mcp.tool()
-async def resolve_field_name(object_name: str, user_field: str) -> Dict[str, Any]:
+async def resolve_field_name(
+    object_name: Annotated[str, Field(description="Название сущности", max_length=256)],
+    user_field: Annotated[str, Field(description="Название поля, например, Наименование, ИНН, Дата", max_length=256)]
+) -> Dict[str, Any]:
     """
     Нормализовать «человеческое» имя поля в точное имя свойства OData (с учётом синонимов).
     Args:
@@ -984,10 +994,10 @@ async def resolve_field_name(object_name: str, user_field: str) -> Dict[str, Any
 @logged_tool
 @mcp.tool()
 async def list_objects(
-    object_name: str,
-    filters: Optional[Union[str, Dict[str, Any], List[str]]] = None,
-    top: Optional[int] = None,
-    expand: Optional[str] = None,
+    object_name: Annotated[str, Field(description="Название сущности", max_length=256)],
+    filters: Annotated[Union[str, Dict[str, Any], List[str]], Field(description="выражение $filter или словарь поле:значение (строки экранируются), либо список выражений (объединяются через AND)", max_length=256)] = None,
+    top: Annotated[int, Field(description="Ограничение записей ($top)", max_length=256)] = None,
+    expand: Annotated[str, Field(description="Поля для $expand (через запятую)", max_length=256)] = None
 ) -> Dict[str, Any]:
     """
     Получить список записей набора сущностей с $filter/$top/$expand.
@@ -1006,14 +1016,16 @@ async def list_objects(
 @logged_tool
 @mcp.tool()
 async def find_object(
-    object_name: str,
-    filters: Optional[Union[str, Dict[str, Any], List[str]]] = None,
-    expand: Optional[str] = None,
+    object_name: Annotated[str, Field(description="Название сущности", max_length=256)],
+    filters: Annotated[Union[str, Dict[str, Any], List[str]], Field(description="выражение $filter или словарь поле:значение (строки экранируются), либо список выражений (объединяются через AND)", max_length=256)] = None,
+    expand: Annotated[str, Field(description="Поля для $expand (через запятую)", max_length=256)] = None,
 ) -> Dict[str, Any]:
     """
     Найти первую запись (эквивалент list_objects(..., top=1)) по фильтру.
     Args:
-      object_name:str; filters:str|dict|list|None; expand:str|None.
+      object_name:str;
+      filters:str|dict|list|None;
+      expand:str|None.
     Returns (dict): стандартный конверт + data:dict|null — найденная запись или null.
     """
     data = await asyncio.to_thread(_server.find_object, object_name, filters, expand)
@@ -1023,14 +1035,16 @@ async def find_object(
 @logged_tool
 @mcp.tool()
 async def create_object(
-    object_name: str,
-    data: Dict[str, Any],
-    expand: Optional[str] = None,
+    object_name: Annotated[str, Field(description="Название сущности", max_length=256)],
+    data: Annotated[Dict[str, Any], Field(description="Тело записи", max_length=256)],
+    expand: Annotated[str, Field(description="Поля для $expand (через запятую)", max_length=256)] = None,
 ) -> Dict[str, Any]:
     """
     Создать запись в наборе сущностей (с авто-разрешением ссылок *_Key при передаче спец-объектов).
     Args:
-      object_name:str; data:dict — тело записи; expand:str|None.
+      object_name:str;
+      data:dict — тело записи;
+      expand:str|None.
     Returns (dict): стандартный конверт + data:list|dict|None; last_id:str|None — Ref_Key созданного объекта.
     """
     res = await asyncio.to_thread(_server.create_object, object_name, data, expand)
@@ -1040,15 +1054,18 @@ async def create_object(
 @logged_tool
 @mcp.tool()
 async def update_object(
-    object_name: str,
-    object_id: Union[str, Dict[str, str]],
-    data: Dict[str, Any],
-    expand: Optional[str] = None,
+    object_name: Annotated[str, Field(description="Название сущности", max_length=256)],
+    object_id: Annotated[Union[str, Dict[str, str]], Field(description="Идентификатор", max_length=256)],
+    data: Annotated[Dict[str, Any], Field(description="Изменяемые поля", max_length=256)],
+    expand: Annotated[str, Field(description="Поля для $expand (через запятую)", max_length=256)] = None,
 ) -> Dict[str, Any]:
     """
     Обновить запись по Ref_Key/ID.
     Args:
-      object_name:str; object_id:str|dict — идентификатор; data:dict — изменяемые поля; expand:str|None.
+      object_name:str;
+      object_id:str|dict — идентификатор;
+      data:dict — изменяемые поля;
+      expand:str|None.
     Returns (dict): стандартный конверт + data:ответ 1С.
     """
     res = await asyncio.to_thread(_server.update_object, object_name, object_id, data, expand)
@@ -1065,7 +1082,9 @@ async def delete_object(
     """
     Пометить на удаление или физически удалить запись.
     Args:
-      object_name:str; object_id:str|dict; physical_delete:bool — True для физического удаления.
+      object_name:str;
+      object_id:str|dict;
+      physical_delete:bool — True для физического удаления.
     Returns (dict): стандартный конверт + data:ответ 1С.
     """
     res = await asyncio.to_thread(_server.delete_object, object_name, object_id, physical_delete)
@@ -1171,7 +1190,7 @@ async def create_document(
 @mcp.tool()
 async def get_entities() -> Dict[str, Any]:
     """
-    Список всех entity set из метаданных (удобный алиас к list_entity_sets()).
+    Список всех entity set из метаданных (удобный алиас к get_server_entity_sets()).
     Вход: нет. Возврат: {http_*/odata_* , entities:list[str]}.
     """
     def _sync() -> Dict[str, Any]:
