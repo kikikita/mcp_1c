@@ -878,7 +878,12 @@ USERNAME = os.getenv("ONEC_USERNAME")
 PASSWORD = os.getenv("ONEC_PASSWORD")
 VERIFY_SSL = os.getenv("ONEC_VERIFY_SSL", "false").lower() not in {"false", "0", "no"}
 
-_server = MCPServer(BASE_URL, username=USERNAME, password=PASSWORD, verify_ssl=VERIFY_SSL)
+if "_server_instance" not in globals():
+    _server_instance = MCPServer(base_url=BASE_URL,
+                                 username=USERNAME,
+                                 password=PASSWORD,
+                                 verify_ssl=VERIFY_SSL)
+_server = _server_instance
 mcp = FastMCP("mcp_1c_improved")
 
 
@@ -893,7 +898,7 @@ async def mcp_tool_entity_sets() -> Dict[str, Any]:
       - odata_error_code:str|null, odata_error_message:str|null
       - entity_sets:list[str] — имена наборов (например, "Catalog_Контрагенты", "Document_ПлатежноеПоручение").
     """
-    data = _server.get_server_entity_sets()
+    data = await asyncio.to_thread(_server.get_server_entity_sets)
     return _json_ready(data)
 
 
@@ -1067,9 +1072,9 @@ async def update_object(
 @logged_tool
 @mcp.tool()
 async def delete_object(
-    object_name: str,
-    object_id: Union[str, Dict[str, str]],
-    physical_delete: bool = False,
+    object_name: Annotated[str, Field(description="Название сущности", max_length=256)],
+    object_id: Annotated[Union[str, Dict[str, str]], Field(description="Идентификатор", max_length=256)],
+    physical_delete: Annotated[bool, Field(description="True для физического удаления", max_length=256)] = False,
 ) -> Dict[str, Any]:
     """
     Пометить на удаление или физически удалить запись.
@@ -1086,13 +1091,14 @@ async def delete_object(
 @logged_tool
 @mcp.tool()
 async def post_document(
-    object_name: str,
-    object_id: Union[str, Dict[str, str]],
+    object_name: Annotated[str, Field(description="Название сущности", max_length=256)],
+    object_id: Annotated[Union[str, Dict[str, str]], Field(description="Идентификатор", max_length=256)],
 ) -> Dict[str, Any]:
     """
     Провести документ (вызов /Post).
     Args:
-      object_name:str — имя документа; object_id:str|dict — Ref_Key/ID.
+      object_name:str — имя документа;
+      object_id:str|dict — Ref_Key/ID.
     Returns (dict): стандартный конверт + data:ответ 1С.
     """
     res = await asyncio.to_thread(_server.post_document, object_name, object_id)
@@ -1102,13 +1108,14 @@ async def post_document(
 @logged_tool
 @mcp.tool()
 async def unpost_document(
-    object_name: str,
-    object_id: Union[str, Dict[str, str]],
+    object_name: Annotated[str, Field(description="Название сущности", max_length=256)],
+    object_id: Annotated[Union[str, Dict[str, str]], Field(description="Идентификатор", max_length=256)],
 ) -> Dict[str, Any]:
     """
     Отменить проведение документа (вызов /Unpost).
     Args:
-      object_name:str; object_id:str|dict.
+      object_name:str;
+      object_id:str|dict.
     Returns (dict): стандартный конверт + data:ответ 1С.
     """
     res = await asyncio.to_thread(_server.unpost_document, object_name, object_id)
@@ -1118,16 +1125,17 @@ async def unpost_document(
 @logged_tool
 @mcp.tool()
 async def search_object(
-    user_type: str,
-    user_entity: str,
+    user_type: Annotated[str, Field(description="тип (справочник/документ/...)", max_length=256)],
+    user_entity: Annotated[str, Field(description="Имя сущности", max_length=256)],
     user_filters: Optional[Union[str, Dict[str, Any], List[str]]] = None,
-    top: Optional[int] = 1,
-    expand: Optional[str] = None,
+    top: Annotated[int, Field(description="Ограничение записей ($top)", max_length=256)] = 1,
+    expand: Annotated[str, Field(description="Поля для $expand (через запятую)", max_length=256)] = None
 ) -> Dict[str, Any]:
     """
     «Умный» поиск по сущности: сам резолвит entity/fields и пробует eq→substringof→tolower (+IsFolder=false при наличии).
     Args:
-      user_type:str — тип ("справочник"/"документ"/...); user_entity:str — имя сущности;
+      user_type:str — тип ("справочник"/"документ"/...);
+      user_entity:str — имя сущности;
       user_filters:str|dict|list|None — строка (по умолч. поиск по текстовому полю) или словарь {поле:значение};
       top:int|None; expand:str|None.
     Returns (dict): стандартный конверт + data:dict|list|None — одна запись при top<=1 или список.
@@ -1139,10 +1147,10 @@ async def search_object(
 @logged_tool
 @mcp.tool()
 async def ensure_entity(
-    user_type: str,
-    user_entity: str,
-    data_or_filters: Union[Dict[str, Any], str],
-    expand: Optional[str] = None,
+    user_type: Annotated[str, Field(description="тип (справочник/документ/...)", max_length=256)],
+    user_entity: Annotated[str, Field(description="Имя сущности", max_length=256)],
+    data_or_filters: Annotated[Union[Dict[str, Any], str], Field(description="фильтр для поиска ИЛИ тело для создания", max_length=256)],
+    expand: Annotated[str, Field(description="Поля для $expand (через запятую)", max_length=256)] = None
 ) -> Dict[str, Any]:
     """
     Найти запись по фильтру; если не найдена — создать по переданным данным (upsert-паттерн).
@@ -1157,17 +1165,18 @@ async def ensure_entity(
 @logged_tool
 @mcp.tool()
 async def create_document(
-    object_name: str,
-    header: Dict[str, Any],
-    rows: Optional[Dict[str, List[Dict[str, Any]]]] = None,
-    post: bool = False,
+    object_name: Annotated[str, Field(description="entity set документа (например, Document_ПоступлениеТоваровУслуг)", max_length=256)],
+    header: Annotated[Dict[str, Any], Field(description="entity set документа (например, Document_ПоступлениеТоваровУслуг)", max_length=256)],
+    rows: Annotated[Dict[str, List[Dict[str, Any]]], Field(description="Ключ - имя табличной части, значение - список словарей, в которых ключ - это строка", max_length=256)] = None,
+    post: Annotated[bool, Field(description="Провести после создания", max_length=256)] = False,
 ) -> Dict[str, Any]:
     """
     Создать документ с табличными частями и, опционально, провести.
     Args:
       object_name:str — entity set документа (например, "Document_ПоступлениеТоваровУслуг");
       header:dict — поля «шапки» (ссылки *_Key можно передавать как спец-объекты для авто-резолва);
-      rows:dict|None — {"ИмяТЧ":[{строка},...]}; post:bool — провести после создания.
+      rows:dict|None — {"ИмяТЧ":[{строка},...]};
+      post:bool — провести после создания.
     Returns (dict): { header:..., table_parts:{ИмяТЧ:[...]} , post?:... } + стандартные http/odata поля.
     """
     res = await asyncio.to_thread(_server.create_document_with_rows, object_name, header, rows, post)
@@ -1211,7 +1220,9 @@ async def get_entities() -> Dict[str, Any]:
 
 @logged_tool
 @mcp.tool()
-async def get_fields(entity_name: str) -> Dict[str, Any]:
+async def get_fields(
+    entity_name: Annotated[str, Field(description="Имя сущности", max_length=256)]
+) -> Dict[str, Any]:
     """
     Получить список свойств (полей) указанной сущности.
     Args: entity_name:str.
@@ -1245,10 +1256,15 @@ async def get_fields(entity_name: str) -> Dict[str, Any]:
 
 @logged_tool
 @mcp.tool()
-async def get_first_records(entity_name: str, n: int) -> Dict[str, Any]:
+async def get_first_records(
+    entity_name: Annotated[str, Field(description="Имя сущности", max_length=256)],
+    n: Annotated[int, Field(description="Количество записей, которые нужно получить", max_length=256)] = 1
+) -> Dict[str, Any]:
     """
     Получить «пример» записи: первые n записей указанного набора (без тяжёлых ТЧ у поступлений).
-    Args: entity_name:str.
+    Args:
+    entity_name:str
+    n: int
     Returns: {http_*/odata_* , record:dict} — может быть пустым {}, если данных нет.
     """
     def _sync() -> Dict[str, Any]:
@@ -1303,7 +1319,11 @@ async def get_first_records(entity_name: str, n: int) -> Dict[str, Any]:
 
 @logged_tool
 @mcp.tool()
-async def find_record(entity_name: str, field: str, value: str) -> Dict[str, Any]:
+async def find_record(
+    entity_name: Annotated[str, Field(description="Имя сущности", max_length=256)],
+    field: Annotated[str, Field(description="Имя поля для фильтрации (field eq value)", max_length=256)],
+    value: Annotated[str, Field(description="Значение поля для фильтрации (field eq value)", max_length=256)]
+) -> Dict[str, Any]:
     """
     Найти первую запись по условию `field eq 'value'` (строгое равенство).
     Args: entity_name:str; field:str; value:str.
@@ -1347,7 +1367,10 @@ async def find_record(entity_name: str, field: str, value: str) -> Dict[str, Any
 
 @logged_tool
 @mcp.tool()
-async def create_record(entity_name: str, record: Dict[str, Any]) -> Dict[str, Any]:
+async def create_record(
+    entity_name: Annotated[str, Field(description="Имя сущности", max_length=256)],
+    record: Annotated[Dict[str, Any], Field(description="Запись в виде словаря", max_length=256)]
+) -> Dict[str, Any]:
     """
     Быстрое создание записи (без авто-резолва ссылок). Убедитесь, что структура соответствует get_schema/get_record.
     Args: entity_name:str; record:dict.
@@ -1390,7 +1413,10 @@ async def create_record(entity_name: str, record: Dict[str, Any]) -> Dict[str, A
 
 @logged_tool
 @mcp.tool()
-async def post_record(entity_name: str, ref_key: str) -> Dict[str, Any]:
+async def post_record(
+    entity_name: Annotated[str, Field(description="Имя сущности", max_length=256)],
+    ref_key: Annotated[str, Field(description="Ref_Key документа", max_length=256)]
+) -> Dict[str, Any]:
     """
     Провести документ по его Ref_Key (короткий алиас post_document для известных entity_name).
     Args: entity_name:str; ref_key:str.
