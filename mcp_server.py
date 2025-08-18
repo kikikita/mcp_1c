@@ -235,16 +235,12 @@ class MCPServer:
             return {
                 "http_code": self.client.get_http_code(),
                 "http_message": str(e),
-                "odata_error_code": self.client.get_error_code(),
-                "odata_error_message": self.client.get_error_message(),
                 "entity_sets": [],
             }
         return {
             "http_code": self.client.get_http_code(),
             "http_message": self.client.get_http_message(),
-            "odata_error_code": self.client.get_error_code(),
-            "odata_error_message": self.client.get_error_message(),
-            "entity_sets": list((meta.get("entity_sets") or {}).keys()),
+            "entity_sets": list((meta or {}).keys()),
         }
 
     def get_server_metadata(self) -> Dict[str, Any]:
@@ -255,16 +251,12 @@ class MCPServer:
             return {
                 "http_code": self.client.get_http_code(),
                 "http_message": str(e),
-                "odata_error_code": self.client.get_error_code(),
-                "odata_error_message": self.client.get_error_message(),
                 "entity_sets": {},
             }
         return {
             "http_code": self.client.get_http_code(),
             "http_message": self.client.get_http_message(),
-            "odata_error_code": self.client.get_error_code(),
-            "odata_error_message": self.client.get_error_message(),
-            "entity_sets": meta.get("entity_sets"),
+            "entity_sets": meta,
         }
 
     def get_entity_schema(self, object_name: str) -> Optional[Dict[str, Any]]:
@@ -273,7 +265,7 @@ class MCPServer:
         except Exception as e:
             logger.warning("Failed to fetch metadata: %s", e)
             return None
-        return (meta.get("entity_sets") or {}).get(object_name)
+        return (meta or {}).get(object_name)
 
     def resolve_entity_name(self, user_entity: str, user_type: Optional[str] = None) -> Optional[str]:
         if not user_entity:
@@ -292,7 +284,7 @@ class MCPServer:
         except Exception as e:
             logger.warning("Failed to fetch metadata: %s", e)
             return None
-        entity_sets = list((meta.get("entity_sets") or {}).keys())
+        entity_sets = list((meta or {}).keys())
         candidates: List[Tuple[str, str, int]] = []
         for es in entity_sets:
             for p in prefixes:
@@ -708,7 +700,7 @@ class MCPServer:
                 "odata_error_message": None,
                 "schema": None,
             }
-        es = (meta.get("entity_sets") or {}).get(object_name)
+        es = (meta or {}).get(object_name)
         return {
             "http_code": self.client.get_http_code(),
             "http_message": self.client.get_http_message(),
@@ -901,7 +893,7 @@ async def mcp_tool_entity_sets() -> Dict[str, Any]:
       - odata_error_code:str|null, odata_error_message:str|null
       - entity_sets:list[str] — имена наборов (например, "Catalog_Контрагенты", "Document_ПлатежноеПоручение").
     """
-    data = await asyncio.to_thread(_server.get_server_entity_sets)
+    data = _server.get_server_entity_sets()
     return _json_ready(data)
 
 
@@ -1204,7 +1196,7 @@ async def get_entities() -> Dict[str, Any]:
                 "odata_error_message": _server.client.get_error_message(),
                 "entities": [],
             }
-        ents = list((meta.get("entity_sets") or {}).keys())
+        ents = list((meta or {}).keys())
         return {
             "http_code": _server.client.get_http_code(),
             "http_message": _server.client.get_http_message(),
@@ -1236,7 +1228,7 @@ async def get_fields(entity_name: str) -> Dict[str, Any]:
                 "odata_error_message": _server.client.get_error_message(),
                 "fields": [],
             }
-        schema = (meta.get("entity_sets") or {}).get(entity_name, {}) or {}
+        schema = (meta or {}).get(entity_name, {}) or {}
         props = schema.get("properties") or {}
         fields = list(props.keys())
         return {
