@@ -1453,7 +1453,9 @@ async def post_record(
 @logged_tool
 @mcp.tool()
 async def add_product_service(
-    type_of_good: str, waybill: Dict[str, Any], product_or_service: Dict[str, Any]
+    type_of_good: Annotated[str, Field(description="Обязательно принимает одно из двух значений - Товары или Услуги", max_length=256)],
+    waybill: Annotated[Dict[str, Any], Field(description="словарь будущего документа (как из get_record/create_record)", max_length=256)],
+    product_or_service: Annotated[Dict[str, Any], Field(description="строка товарной части", max_length=256)]
 ) -> Dict[str, Any]:
     """
     Добавить товар/услугу в подготовленный словарь накладной (in-memory; без запросов к 1С).
@@ -1483,17 +1485,18 @@ async def add_product_service(
 @logged_tool
 @mcp.tool()
 async def get_records_by_date_range(
-    entity_name: str,
-    date_field: str = "Date",
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
-    additional_filters: Optional[Dict[str, Any]] = None,
-    top: Optional[int] = None
+    entity_name: Annotated[str, Field(description="Имя сущности", max_length=256)],
+    date_field: Annotated[str, Field(description="Название поля с датой", max_length=256)] = "Date",
+    start_date: Annotated[datetime, Field(description="Начальная дата", max_length=256)] = None,
+    end_date: Annotated[datetime, Field(description="Конечная дата", max_length=256)] = None,
+    additional_filters: Annotated[Dict[str, Any], Field(description="Ыильтры к записям в виде поле:значение", max_length=256)] = None,
+    top: Annotated[int, Field(description="Количество записей для извлечения", max_length=256)] = None
 ) -> Dict[str, Any]:
     """
     Выборка по диапазону дат (+доп. фильтры) с поддержкой $top.
     Args:
-      entity_name:str; date_field:str="Date"; start_date:datetime|None; end_date:datetime|None;
+      entity_name:str;
+      date_field:str="Date"; start_date:datetime|None; end_date:datetime|None;
       additional_filters:dict|None — {поле:значение}; top:int|None.
     Returns: {http_*/odata_* , success:bool, data:list|[]|str} — список записей (см. примечание).
     Примечание: текущая реализация сериализует выборку в строку JSON при наличии записей (историческое поведение сервиса).
@@ -1560,11 +1563,11 @@ async def get_records_by_date_range(
 @logged_tool
 @mcp.tool()
 async def get_records_with_expand(
-    entity_name: str,
-    expand_fields: List[str],
-    filters: Optional[Dict[str, Any]] = None,
-    order_by: Optional[str] = None,
-    desc: bool = False
+    entity_name: Annotated[str, Field(description="Имя сущности", max_length=256)],
+    expand_fields: Annotated[List[str], Field(description="имена расширяемых свойств (через запятую внутри вызова)", max_length=256)],
+    filters: Annotated[Dict[str, Any], Field(description="Фильтры для фильтрации записей в виде поле:значение → объединяются AND", max_length=256)] = None,
+    order_by: Annotated[str, Field(description="имя поля сортировки", max_length=256)] = None,
+    desc: Annotated[bool, Field(description="Сортировка по убыванию", max_length=256)] = False
 ) -> Dict[str, Any]:
     """
     Выборка с $expand связанных сущностей (+фильтры и простая сортировка).
@@ -1628,13 +1631,13 @@ async def get_records_with_expand(
 @logged_tool
 @mcp.tool()
 async def get_aggregated_data(
-    entity_name: str,
-    group_by_field: str,
-    aggregate_field: str,
-    aggregate_func: str = "sum",
-    date_field: str = "Date",
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None
+    entity_name: Annotated[str, Field(description="Имя сущности", max_length=256)],
+    group_by_field: Annotated[str, Field(description="Поле для группировки", max_length=256)],
+    aggregate_field: Annotated[str, Field(description="Поле для агрегации", max_length=256)],
+    aggregate_func: Annotated[str, Field(description="Функция агрегации - sum|avg|min|max|count", max_length=256)] = "sum",
+    date_field: Annotated[str, Field(description="Имя поля с датой", max_length=256)] = "Date",
+    start_date: Annotated[datetime, Field(description="Начальная дата", max_length=256)] = None,
+    end_date: Annotated[datetime, Field(description="Конечная дата", max_length=256)] = None
 ) -> Dict[str, Any]:
     """
     Простейшая агрегация выборки по полю группировки (sum/avg/min/max/count) с опциональным ограничением по датам.
