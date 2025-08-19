@@ -690,23 +690,24 @@ class MCPServer:
     def get_schema(self, object_name: str) -> Dict[str, Any]:
         meta = None
         try:
-            meta = self.client.get_metadata()
+            meta = _server.client.get_metadata()
         except Exception as e:
-            logger.warning("Failed to fetch metadata: %s", e)
             return {
-                "http_code": None,
+                "http_code": _server.client.get_http_code(),
                 "http_message": str(e),
-                "odata_error_code": None,
-                "odata_error_message": None,
-                "schema": None,
+                "odata_error_code": _server.client.get_error_code(),
+                "odata_error_message": _server.client.get_error_message(),
+                "fields": [],
             }
-        es = (meta or {}).get(object_name)
+        schema = (meta or {}).get(object_name, {}) or {}
+        props = schema.get("properties") or {}
+        fields = list(props.keys())
         return {
-            "http_code": self.client.get_http_code(),
-            "http_message": self.client.get_http_message(),
-            "odata_error_code": self.client.get_error_code(),
-            "odata_error_message": self.client.get_error_message(),
-            "schema": es,
+            "http_code": _server.client.get_http_code(),
+            "http_message": _server.client.get_http_message(),
+            "odata_error_code": _server.client.get_error_code(),
+            "odata_error_message": _server.client.get_error_message(),
+            "fields": fields,
         }
 
     # ------------------------------------------------------------------
@@ -908,7 +909,7 @@ async def get_schema(
     object_name: Annotated[str, Field(description="точное имя entity set", max_length=256)]
 ) -> Dict[str, Any]:
     """
-    Получить схему (properties) для заданного набора сущностей.
+    Получить список полей для заданного набора сущностей.
     Args:
       object_name:str — точное имя entity set (например, "Catalog_Контрагенты").
     Returns (dict):
@@ -1186,72 +1187,6 @@ async def create_document(
 # ------------------------------------------------------------------
 # Convenience tools — now using ONLY the shared _server.client
 # ------------------------------------------------------------------
-
-@logged_tool
-@mcp.tool()
-async def get_entities() -> Dict[str, Any]:
-    """
-    Список всех entity set из метаданных (удобный алиас к get_server_entity_sets()).
-    Вход: нет. Возврат: {http_*/odata_* , entities:list[str]}.
-    """
-    def _sync() -> Dict[str, Any]:
-        try:
-            meta = _server.client.get_metadata()
-        except Exception as e:
-            return {
-                "http_code": _server.client.get_http_code(),
-                "http_message": str(e),
-                "odata_error_code": _server.client.get_error_code(),
-                "odata_error_message": _server.client.get_error_message(),
-                "entities": [],
-            }
-        ents = list((meta or {}).keys())
-        return {
-            "http_code": _server.client.get_http_code(),
-            "http_message": _server.client.get_http_message(),
-            "odata_error_code": _server.client.get_error_code(),
-            "odata_error_message": _server.client.get_error_message(),
-            "entities": ents,
-        }
-
-    data = await asyncio.to_thread(_sync)
-    return _json_ready(data)
-
-
-@logged_tool
-@mcp.tool()
-async def get_fields(
-    entity_name: Annotated[str, Field(description="Имя сущности", max_length=256)]
-) -> Dict[str, Any]:
-    """
-    Получить список свойств (полей) указанной сущности.
-    Args: entity_name:str.
-    Returns: {http_*/odata_* , fields:list[str]}.
-    """
-    def _sync() -> Dict[str, Any]:
-        try:
-            meta = _server.client.get_metadata()
-        except Exception as e:
-            return {
-                "http_code": _server.client.get_http_code(),
-                "http_message": str(e),
-                "odata_error_code": _server.client.get_error_code(),
-                "odata_error_message": _server.client.get_error_message(),
-                "fields": [],
-            }
-        schema = (meta or {}).get(entity_name, {}) or {}
-        props = schema.get("properties") or {}
-        fields = list(props.keys())
-        return {
-            "http_code": _server.client.get_http_code(),
-            "http_message": _server.client.get_http_message(),
-            "odata_error_code": _server.client.get_error_code(),
-            "odata_error_message": _server.client.get_error_message(),
-            "fields": fields,
-        }
-
-    data = await asyncio.to_thread(_sync)
-    return _json_ready(data)
 
 
 @logged_tool
