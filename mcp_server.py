@@ -253,10 +253,19 @@ class MCPServer:
                 "http_message": str(e),
                 "entity_sets": {},
             }
+        # simplify properties to just a list of field names
+        simplified: Dict[str, Dict[str, Any]] = {}
+        for name, info in (meta or {}).items():
+            props = info.get("properties", {})
+            simplified[name] = {
+                "entity_type": info.get("entity_type"),
+                "properties": list(props.keys()),
+            }
+
         return {
             "http_code": self.client.get_http_code(),
             "http_message": self.client.get_http_message(),
-            "entity_sets": meta,
+            "entity_sets": simplified,
         }
 
     def get_entity_schema(self, object_name: str) -> Optional[Dict[str, Any]]:
@@ -927,9 +936,8 @@ async def mcp_tool_metadata() -> Dict[str, Any]:
     Получить полные метаданные OData: разобранные entity sets.
     Вход: нет.
     Выход (dict):
-      - http_code/http_message/odata_error_code/odata_error_message
-      - raw:str|None — исходный XML,
-      - entity_sets:dict — имя -> схема.
+      - http_code/http_message
+      - entity_sets:dict — имя -> {"entity_type": str|None, "properties": [field, ...]}.
     """
     data = await asyncio.to_thread(_server.get_server_metadata)
     return _json_ready(data)
