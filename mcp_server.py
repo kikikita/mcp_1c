@@ -11,7 +11,6 @@ import functools
 from datetime import datetime
 from typing import Annotated
 from pydantic import Field
-
 from mcp.server.fastmcp import FastMCP
 from odata_client import ODataClient, _is_guid
 from log_config import setup_logging
@@ -19,6 +18,13 @@ from field_filter import filter_fields, resolve_allowed_fields
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+
+# Heuristic to detect if a string already looks like an OData filter
+FILTER_TOKEN_RE = re.compile(
+    r"\b(eq|ne|gt|lt|ge|le|and|or|not|substringof|startswith|endswith)\b",
+    re.IGNORECASE,
+)
 
 
 def _json_ready(x: Any) -> Any:
@@ -462,6 +468,12 @@ class MCPServer:
                 return pname
         return (props and list(props.keys())[0]) or None
 
+    def _looks_like_filter(self, expr: str) -> bool:
+        """Return True if the string resembles a ready OData filter expression."""
+        if not isinstance(expr, str):
+            return False
+        return bool(FILTER_TOKEN_RE.search(expr))
+
     def _compose_expr_eq(self, field: str, value: str) -> str:
         safe = (value or "").replace("'", "''")
         return f"{field} eq '{safe}'"
@@ -498,12 +510,13 @@ class MCPServer:
         base_eq = self._build_filter(filters) or ""
         attempts = [base_eq] if base_eq else []
 
-        # строковые поля
-        string_fields = []
+        # Определим строковые поля по типу из схемы
+        schema = self.get_entity_schema(object_name) or {}
+        props: Dict[str, Dict[str, Any]] = schema.get("properties", {}) or {}
+        string_fields: List[Tuple[str, str]] = []
         for k, v in filters.items():
-            if isinstance(v, str):
-                fld = k
-                string_fields.append((fld, v))
+            if isinstance(v, str) and (props.get(k, {}).get("type", "").endswith("String")):
+                string_fields.append((k, v))
 
         # 1) substringof для каждого строкового поля поверх eq остальных
         for fld, val in string_fields:
@@ -774,13 +787,17 @@ class MCPServer:
         expand: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Прогрессивный поиск:
-          - если filters=str → field = best text field, попытки:
-              eq → substringof → substringof(tolower), затем все 3 с добавкой IsFolder eq false (если есть).
-          - если filters=dict → точные eq; если пусто:
-              для строковых полей делаем substringof/substringof+tolower (остальные оставляем eq),
-              затем варианты с IsFolder eq false (если есть).
-        Возвращает первый непустой результат (учитывая top).
+        Прогрессивный поиск.
+
+        - filters=str:
+            * если строка похожа на готовый OData `$filter`, он выполняется как есть;
+            * иначе ищем по основному текстовому полю (eq → substringof → substringof(tolower),
+              затем варианты с `IsFolder eq false`, если есть).
+        - filters=dict: сначала точные `eq`, затем для строковых полей
+          `substringof/substringof+tolower` (остальные остаются `eq`), плюс
+          попытки с `IsFolder eq false`.
+
+        Возвращает первый непустой результат (учитывая `top`).
         """
         object_name = self.resolve_entity_name(user_entity, user_type)
         if not object_name:
@@ -837,8 +854,15 @@ class MCPServer:
 
             return res  # пусто
 
-        # Строковый поиск: выберем поле
+        # Строковый поиск или готовый фильтр
         if isinstance(user_filters, str) and user_filters:
+            # Если строка похожа на готовое OData-выражение — используем её напрямую
+            if self._looks_like_filter(user_filters):
+                if top is not None and int(top) <= 1:
+                    return self.find_object(object_name, filters=user_filters, expand=expand)
+                return self.list_objects(object_name, filters=user_filters, top=top, expand=expand)
+
+            # Иначе считаем, что это текст для поиска по основному полю
             fld = self._default_text_field(object_name)
             if not fld:
                 # Как fallback — просто top(1) без фильтра
@@ -1508,15 +1532,18 @@ async def search_object(
         max_length=256
     )],
     user_filters: Annotated[Optional[Union[str, Dict[str, Any], List[str]]], Field(
-        description="Условия поиска. Может быть: "
-                   "1) Строка: поиск по основному текстовому полю "
-                   "2) Словарь: поле: значение для поиска по нескольким полям "
-                   "3) Список: выражения для объединения через AND "
+        description="Условия поиска. Допустимые варианты:" \
+                   "1) Строка: текст для поиска по основному полю. " \
+                   "Если содержит ключевые слова OData (eq, ge, и т.д.), будет " \
+                   "использована как готовый `$filter`." \
+                   "2) Словарь: {поле: значение}. Строковые значения ищутся " \
+                   "прогрессивно, числа и даты передаются как есть." \
+                   "3) Список: набор готовых выражений, объединяемых через AND." \
                    "4) None: возврат первых записей без фильтра",
         examples=[
             "ООО Ромашка",
-            {"Номер": "123", "Дата": "2024-01-15"},
-            ["Code eq '00001'", "Description ne ''"]
+            {"Номер": "123", "СуммаДокумента": 1000},
+            ["Date eq datetime'2024-01-19T00:00:00'", "СуммаДокумента ge 1000"],
         ]
     )] = None,
     top: Annotated[int, Field(
@@ -1530,20 +1557,20 @@ async def search_object(
     )] = None
 ) -> Dict[str, Any]:
     """
-    Выполняет интеллектуальный поиск по сущности с автоматическим разрешением имен 
+    Выполняет интеллектуальный поиск по сущности с автоматическим разрешением имен
     и прогрессивной стратегией поиска для повышения вероятности нахождения результатов.
-    Функция автоматически определяет оптимальные поля для поиска и последовательно 
-    применяет различные стратегии: точное совпадение → частичное совпадение → 
+    Функция автоматически определяет оптимальные поля для текстового поиска и
+    последовательно применяет стратегии: точное совпадение → частичное совпадение →
     регистронезависимый поиск → исключение папок (если применимо).
-    Функция автоматически определяет основное текстовое поле для поиска 
-    (например, "Description" для справочников) и нормализует имена полей.
+    Если фильтр передан готовым выражением OData, он используется напрямую.
+    Имена полей нормализуются автоматически.
     
     Args:
       user_type: Тип сущности для уточнения поиска (например: "справочник", "документ")
       user_entity: Название сущности на русском языке
       user_filters: Условия поиска. Может быть:
-                   - Строка: поиск по основному текстовому полю
-                   - Словарь: {поле: значение} для поиска по нескольким полям
+                   - Строка: текст либо готовое OData-выражение
+                   - Словарь: {поле: значение} с автоматической подстановкой типов
                    - Список: выражения для объединения через AND
                    - None: возврат первых записей без фильтра
       top: Максимальное количество возвращаемых записей
@@ -1559,11 +1586,17 @@ async def search_object(
                                 при top>1 возвращает список объектов
     
     Примеры использования:
-      - Найти контрагента по наименованию: 
+      - Найти контрагента по наименованию:
         search_object("справочник", "Контрагенты", "ООО Ромашка")
-      - Найти документ по номеру: 
+      - Найти документ по номеру:
         search_object("документ", "Платежное поручение", {"Номер": "123"})
-      - Найти несколько номенклатур: 
+      - Найти документы по дате и сумме:
+        search_object(
+            "документ", "Платежное поручение",
+            ["Date eq datetime'2024-01-19T00:00:00'", "СуммаДокумента ge 1000"],
+            top=10
+        )
+      - Найти несколько номенклатур:
         search_object("справочник", "Номенклатура", "товар", top=5)
     """
     res = await asyncio.to_thread(_server.search_object, user_type, user_entity, user_filters, top, expand)
