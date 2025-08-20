@@ -987,6 +987,10 @@ async def get_schema(
         - odata_error_code (str|null): Код ошибки OData, если произошла ошибка
         - odata_error_message (str|null): Детальное сообщение об ошибке OData
         - fields (list|null): Список с именами свойств сущности (например: "Ref_Key", "Description", "Code")
+
+    Примеры использования:
+        - Получить схему сущности Catalog_Контрагенты: get_schema("Catalog_Контрагенты")
+        - Получить схему платежного поручения: get_schema("Document_ПлатежноеПоручение")
     """
     data = await asyncio.to_thread(_server.get_schema, object_name)
     return _json_ready(data)
@@ -1051,6 +1055,10 @@ async def resolve_entity_name(
         - http_message (str|null): Текстовое описание HTTP статуса
         - odata_error_code (str|null): Код ошибки OData, если произошла ошибка
         - odata_error_message (str|null): Детальное сообщение об ошибке OData
+
+    Примеры использования:
+        - Найти каталог контрагентов: resolve_entity_name("Контрагенты", "каталог")
+        - Найти сущность платежного поручения в 1С: resolve_entity_name("Платежное поручение")
     """
     resolved = await asyncio.to_thread(_server.resolve_entity_name, user_entity, user_type)
     return _json_ready(
@@ -1098,6 +1106,10 @@ async def resolve_field_name(
         - http_message (str|null): Текстовое описание HTTP статуса
         - odata_error_code (str|null): Код ошибки OData, если произошла ошибка
         - odata_error_message (str|null): Детальное сообщение об ошибке OData
+    
+    Примеры использования:
+        - Получить название поля, содержащего наименование контрагента: resolve_field_name("Catalog_Контрагенты", "Наименование")
+        - Узнать, в каком поле сущности платежного поручения хранится джата создания платежного поручения: resolve_field_name("Document_ПлатежноеПоручение", "Дата")
     """
     resolved = await asyncio.to_thread(_server.resolve_field_name, object_name, user_field)
     return _json_ready(
@@ -1165,7 +1177,8 @@ async def list_objects(
         - data (list[dict]|null): Список записей с данными объектов или None при ошибке
 
     Примеры использования:
-      - Получить первых 10 контрагентов: list_objects("Catalog_Контрагенты", top=10)
+      - Получить первых 10 контрагентов:
+        list_objects("Catalog_Контрагенты", top=10)
       - Найти контрагентов с наименованием "Поставщик": 
         list_objects("Catalog_Контрагенты", filters={"Description": "Поставщик"})
       - Получить платежные поручения с расширением данных контрагента:
@@ -1222,6 +1235,14 @@ async def find_object(
         - odata_error_code (str|null): Код ошибки OData, если произошла ошибка
         - odata_error_message (str|null): Детальное сообщение об ошибке OData
         - data (dict|null): Найденная запись в виде словаря или None, если ничего не найдено
+
+    Примеры использования:
+        - Найти контрагента с кодом "00001": 
+          find_object("Catalog_Контрагенты", filters={"Code": "00001"})
+        - Найти незаполненное платежное поручение: 
+          find_object("Document_ПлатежноеПоручение", filters={"Posted": False})
+        - Найти номенклатуру с расширением данных единицы измерения:
+          find_object("Catalog_Номенклатура", filters={"Description": "Товар"}, expand="ЕдиницаИзмерения")
     """
     data = await asyncio.to_thread(_server.find_object, object_name, filters, expand)
     return _json_ready(data)
@@ -1345,16 +1366,12 @@ async def update_object(
         - data (dict|null): Обновленная запись с расширенными данными или None при ошибке
     
     Примеры использования:
-      - Обновить наименование контрагента: 
-        update_object("Catalog_Контрагенты", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", 
-                     {"Description": "ООО Ромашка (новое название)"})
-      - Изменить контрагента в документе с автоматическим поиском:
-        update_object("Document_ПлатежноеПоручение", "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", 
-                     {"Контрагент_Key": {"Code": "00002"}})
-      - Обновить несколько полей с расширением данных:
-        update_object("Catalog_Номенклатура", "cccccccc-dddd-eeee-ffff-gggggggggggg", 
-                     {"Description": "Новое описание", "Цена": 150.75}, 
-                     expand="ЕдиницаИзмерения")
+        - Обновить наименование контрагента: 
+          update_object("Catalog_Контрагенты", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", {"Description": "ООО Ромашка (новое название)"})
+        - Изменить контрагента в документе с автоматическим поиском:
+          update_object("Document_ПлатежноеПоручение", "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", {"Контрагент_Key": {"Code": "00002"}})
+        - Обновить несколько полей с расширением данных:
+          update_object("Catalog_Номенклатура", "cccccccc-dddd-eeee-ffff-gggggggggggg", {"Description": "Новое описание", "Цена": 150.75}, expand="ЕдиницаИзмерения")
     """
     res = await asyncio.to_thread(_server.update_object, object_name, object_id, data, expand)
     return _json_ready(res)
@@ -1405,6 +1422,14 @@ async def delete_object(
         - odata_error_code (str|null): Код ошибки OData, если произошла ошибка
         - odata_error_message (str|null): Детальное сообщение об ошибке OData
         - data (dict|null): Ответ сервера 1С или None при ошибке
+    
+    Примеры использования:
+        - Пометить контрагента на удаление: 
+          delete_object("Catalog_Контрагенты", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        - Физически удалить документ: 
+          delete_object("Document_ПлатежноеПоручение", "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", True)
+        - Удалить объект с составным ключом: 
+          delete_object("Catalog_ДополнительныеРеквизиты", {"Code": "00001", "Вид": "Основной"})
     """
     res = await asyncio.to_thread(_server.delete_object, object_name, object_id, physical_delete)
     return _json_ready(res)
@@ -1447,6 +1472,12 @@ async def post_document(
         - odata_error_message (str|null): Детальное сообщение об ошибке OData
         - last_id (str|null): Ref_Key документа или None при ошибке
         - data (dict|null): Ответ сервера 1С с результатом проведения или None при ошибке
+
+    Примеры использования:
+        - Провести платежное поручение: 
+        post_document("Document_ПлатежноеПоручение", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        - Провести документ поступления: 
+        post_document("Document_ПоступлениеТоваров", "bbbbbbbb-cccc-dddd-eeee-ffffffffffff")
     """
     res = await asyncio.to_thread(_server.post_document, object_name, object_id)
     return _json_ready(res)
@@ -1489,6 +1520,12 @@ async def unpost_document(
         - odata_error_message (str|null): Детальное сообщение об ошибке OData
         - last_id (str|null): Ref_Key документа или None при ошибке
         - data (dict|null): Ответ сервера 1С с результатом отмены проведения или None при ошибке
+
+    Примеры использования:
+        - Отменить проведение платежного поручения: 
+        unpost_document("Document_ПлатежноеПоручение", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        - Отменить проведение документа поступления: 
+        unpost_document("Document_ПоступлениеТоваров", "bbbbbbbb-cccc-dddd-eeee-ffffffffffff")
     """
     res = await asyncio.to_thread(_server.unpost_document, object_name, object_id)
     return _json_ready(res)
