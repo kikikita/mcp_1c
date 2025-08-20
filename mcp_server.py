@@ -335,7 +335,28 @@ class MCPServer:
             return candidates[0][0]
         return None
 
-    def resolve_field_name(self, object_name: str, user_field: str) -> Optional[str]:
+    def resolve_field_name(
+        self,
+        object_name: str,
+        user_field: str,
+        *,
+        fallback: bool = True,
+    ) -> Optional[str]:
+        """Resolve a human readable field name to the exact OData property name.
+
+        Parameters
+        ----------
+        object_name: str
+            Exact name of the EntitySet.
+        user_field: str
+            Human readable field name provided by the user.
+        fallback: bool, default True
+            Whether to fall back to a default text field (``Description``/
+            ``Наименование``/``Name``) when no direct match is found.  When
+            ``False`` the function returns ``None`` if the field cannot be
+            resolved, allowing the caller to keep the original field name and
+            avoid accidental overwrites of unrelated properties.
+        """
         if not user_field:
             return None
         schema = self.get_entity_schema(object_name)
@@ -355,9 +376,10 @@ class MCPServer:
             pl = p.lower()
             if key_lower in pl or pl in key_lower:
                 return p
-        for default_field in ["Description", "Наименование", "Name"]:
-            if default_field in props:
-                return default_field
+        if fallback:
+            for default_field in ["Description", "Наименование", "Name"]:
+                if default_field in props:
+                    return default_field
         return None
 
     # ------------------------------------------------------------------
@@ -384,7 +406,7 @@ class MCPServer:
         _ = self.get_entity_schema(object_name)
         out: Dict[str, Any] = {}
         for k, v in (payload or {}).items():
-            fld = self.resolve_field_name(object_name, k) or k
+            fld = self.resolve_field_name(object_name, k, fallback=False) or k
             if (fld.endswith("_Key") or fld.endswith("Key")) and isinstance(v, dict):
                 guid = self._resolve_reference(v)
                 out[fld] = guid or v
@@ -1104,7 +1126,6 @@ async def list_objects(
                    "3) Список выражений, которые объединяются через AND",
         examples=[
             "Description eq 'Поставщик'",
-            "Date eq datetime'2024-01-19T00:00:00'",
             {"Description": "Поставщик", "DeletionMark": False},
             ["Description eq 'Поставщик'", "Code gt '1000'"]
         ]
@@ -1701,18 +1722,6 @@ async def get_first_records(
         examples=["Catalog_Контрагенты", "Document_ПлатежноеПоручение", "Catalog_Номенклатура"],
         max_length=256
     )],
-    user_filters: Annotated[Optional[Union[str, Dict[str, Any], List[str]]], Field(
-        description="Условия поиска. Может быть: "
-                   "1) Строка: поиск по основному текстовому полю "
-                   "2) Словарь: поле: значение для поиска по нескольким полям "
-                   "3) Список: выражения для объединения через AND "
-                   "4) None: возврат первых записей без фильтра",
-        examples=[
-            "ООО Ромашка",
-            {"Номер": "123", "Дата": "2024-01-15"},
-            ["Code eq '00001'", "Description ne ''"]
-        ]
-    )] = None,
     n: Annotated[int, Field(
         description="Количество записей для получения. Положительное целое число",
         examples=[1, 3, 5],
