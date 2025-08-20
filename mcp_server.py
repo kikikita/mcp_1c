@@ -15,6 +15,7 @@ from pydantic import Field
 from mcp.server.fastmcp import FastMCP
 from odata_client import ODataClient, _is_guid
 from log_config import setup_logging
+from field_filter import filter_fields, resolve_allowed_fields
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -213,8 +214,12 @@ class MCPServer:
         return None
 
     @staticmethod
-    def _result_from_response(response, client: ODataClient) -> Dict[str, Any]:
+    def _result_from_response(
+        response, client: ODataClient, object_name: Optional[str] = None
+    ) -> Dict[str, Any]:
         data = response.values() if hasattr(response, "values") else None
+        if object_name:
+            data = filter_fields(object_name, data)
         return {
             "http_code": client.get_http_code(),
             "http_message": client.get_http_message(),
@@ -257,6 +262,9 @@ class MCPServer:
         simplified: Dict[str, Dict[str, Any]] = {}
         for name, info in (meta or {}).items():
             props = info.get("properties", {})
+            allowed = resolve_allowed_fields(name)
+            if allowed:
+                props = {k: v for k, v in props.items() if k in allowed}
             simplified[name] = {
                 "entity_type": info.get("entity_type"),
                 "properties": list(props.keys()),
@@ -274,7 +282,16 @@ class MCPServer:
         except Exception as e:
             logger.warning("Failed to fetch metadata: %s", e)
             return None
-        return (meta or {}).get(object_name)
+        schema = (meta or {}).get(object_name)
+        if not schema:
+            return None
+        props = schema.get("properties", {})
+        allowed = resolve_allowed_fields(object_name)
+        if allowed:
+            props = {k: v for k, v in props.items() if k in allowed}
+        schema = dict(schema)
+        schema["properties"] = props
+        return schema
 
     def resolve_entity_name(self, user_entity: str, user_type: Optional[str] = None) -> Optional[str]:
         if not user_entity:
@@ -402,7 +419,8 @@ class MCPServer:
                 "data": None,
             }
         vals = resp.values() or []
-        return vals, self._result_from_response(resp, self.client)
+        vals = filter_fields(object_name, vals)
+        return vals, self._result_from_response(resp, self.client, object_name)
 
     def _has_isfolder(self, object_name: str) -> bool:
         schema = self.get_entity_schema(object_name) or {}
@@ -535,7 +553,7 @@ class MCPServer:
                 "last_id": None,
                 "data": None,
             }
-        return self._result_from_response(response, self.client)
+        return self._result_from_response(response, self.client, object_name)
 
     def find_object(
         self,
@@ -567,7 +585,7 @@ class MCPServer:
                 "last_id": None,
                 "data": None,
             }
-        res = self._result_from_response(response, self.client)
+        res = self._result_from_response(response, self.client, object_name)
         items = res.get("data") or []
         res["data"] = items[0] if items else None
         return res
@@ -598,7 +616,7 @@ class MCPServer:
                 "last_id": None,
                 "data": None,
             }
-        return self._result_from_response(response, self.client)
+        return self._result_from_response(response, self.client, object_name)
 
     def update_object(
         self,
@@ -627,7 +645,7 @@ class MCPServer:
                 "last_id": None,
                 "data": None,
             }
-        return self._result_from_response(response, self.client)
+        return self._result_from_response(response, self.client, object_name)
 
     def delete_object(
         self,
@@ -653,7 +671,7 @@ class MCPServer:
                     "last_id": None,
                     "data": None,
                 }
-            return self._result_from_response(response, self.client)
+            return self._result_from_response(response, self.client, object_name)
         return self.update_object(object_name, object_id, {"DeletionMark": True})
 
     def post_document(self, object_name: str, object_id: Union[str, Dict[str, str]]) -> Dict[str, Any]:
@@ -674,7 +692,7 @@ class MCPServer:
                 "last_id": None,
                 "data": None,
             }
-        return self._result_from_response(response, self.client)
+        return self._result_from_response(response, self.client, object_name)
 
     def unpost_document(self, object_name: str, object_id: Union[str, Dict[str, str]]) -> Dict[str, Any]:
         builder = getattr(self.client, object_name).id(object_id)
@@ -694,7 +712,7 @@ class MCPServer:
                 "last_id": None,
                 "data": None,
             }
-        return self._result_from_response(response, self.client)
+        return self._result_from_response(response, self.client, object_name)
 
     def get_schema(self, object_name: str) -> Dict[str, Any]:
         meta = None
@@ -710,6 +728,9 @@ class MCPServer:
             }
         schema = (meta or {}).get(object_name, {}) or {}
         props = schema.get("properties") or {}
+        allowed = resolve_allowed_fields(object_name)
+        if allowed:
+            props = {k: v for k, v in props.items() if k in allowed}
         fields = list(props.keys())
         return {
             "http_code": _server.client.get_http_code(),
@@ -872,7 +893,11 @@ class MCPServer:
                             }
                         )
                         continue
-                    tp_results.append(self._result_from_response(resp, self.client))
+                    tp_results.append(
+                        self._result_from_response(
+                            resp, self.client, f"{object_name}_{tp_name}"
+                        )
+                    )
                 result["table_parts"][tp_name] = tp_results
         if post:
             result["post"] = self.post_document(object_name, doc_id)
@@ -1240,6 +1265,7 @@ async def get_first_records(
                     rec.pop("Товары", None)
                     rec.pop("Услуги", None)
                 recs.append(rec)
+            recs = filter_fields(entity_name, recs)
             return {
                 "http_code": _server.client.get_http_code(),
                 "http_message": _server.client.get_http_message(),
@@ -1296,6 +1322,7 @@ async def find_record(
                 "record": {},
             }
         rec = sample[0] if sample else {}
+        rec = filter_fields(entity_name, rec)
         return {
             "http_code": _server.client.get_http_code(),
             "http_message": _server.client.get_http_message(),
@@ -1334,6 +1361,7 @@ async def create_record(
             created = entity.create(record)
             vals = created.values()
             first = vals[0] if vals else {}
+            first = filter_fields(entity_name, first)
         except Exception as e:
             return {
                 "http_code": _server.client.get_http_code(),
@@ -1479,7 +1507,8 @@ async def get_records_by_date_range(
                 result_dict = sample
             else:
                 result_dict = []
-            
+            result_dict = filter_fields(entity_name, result_dict)
+
             return {
                 "http_code": _server.client.get_http_code(),
                 "http_message": _server.client.get_http_message(),
@@ -1547,7 +1576,8 @@ async def get_records_with_expand(
                 result_dict = sample
             else:
                 result_dict = []
-            
+            result_dict = filter_fields(entity_name, result_dict)
+
             return {
                 "http_code": _server.client.get_http_code(),
                 "http_message": _server.client.get_http_message(),
