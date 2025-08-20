@@ -1104,6 +1104,7 @@ async def list_objects(
                    "3) Список выражений, которые объединяются через AND",
         examples=[
             "Description eq 'Поставщик'",
+            "Date eq datetime'2024-01-19T00:00:00'",
             {"Description": "Поставщик", "DeletionMark": False},
             ["Description eq 'Поставщик'", "Code gt '1000'"]
         ]
@@ -1700,6 +1701,18 @@ async def get_first_records(
         examples=["Catalog_Контрагенты", "Document_ПлатежноеПоручение", "Catalog_Номенклатура"],
         max_length=256
     )],
+    user_filters: Annotated[Optional[Union[str, Dict[str, Any], List[str]]], Field(
+        description="Условия поиска. Может быть: "
+                   "1) Строка: поиск по основному текстовому полю "
+                   "2) Словарь: поле: значение для поиска по нескольким полям "
+                   "3) Список: выражения для объединения через AND "
+                   "4) None: возврат первых записей без фильтра",
+        examples=[
+            "ООО Ромашка",
+            {"Номер": "123", "Дата": "2024-01-15"},
+            ["Code eq '00001'", "Description ne ''"]
+        ]
+    )] = None,
     n: Annotated[int, Field(
         description="Количество записей для получения. Положительное целое число",
         examples=[1, 3, 5],
