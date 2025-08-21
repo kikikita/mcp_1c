@@ -1698,8 +1698,8 @@ async def create_document(
     header: Annotated[Dict[str, Any], Field(
         description="Данные для шапки документа в виде словаря поле: значение",
         examples=[
-            {"Date": "2024-01-15", "Number": "123", "Контрагент": "xxxxxxxxxx-xxxx-xxxx-xxxx"},
-            {"Date": "2024-01-16", "Number": "124", "Ref_Key": "xxxxxxxxxx-xxxx-xxxx-xxxx"}
+            {"Date": "2024-01-16T23:59:59", "Number": "124", "Ref_Key": "xxxxxxxxxx-xxxx-xxxx-xxxx"},
+            {"Date": "2024-01-15T18:00:00", "Number": "123", "Контрагент": "xxxxxxxxxx-xxxx-xxxx-xxxx", "Контрагент_Type": "StandardODATA.Catalog_Контрагенты"},
         ]
     )],
     rows: Annotated[Dict[str, List[Dict[str, Any]]], Field(
@@ -1721,9 +1721,9 @@ async def create_document(
     Args:
       object_name: Точное имя набора сущностей документа, полученное из resolve_entity_name()
       header: Данные для шапки документа. Поддерживает сложные объекты для автоматического 
-             разрешения ссылок на связанные объекты
+             разрешения ссылок на связанные объекты. Для платежного поручения поле "Контрагент_Type" обязательно для заполнения
       rows: Данные для табличных частей документа. Каждая табличная часть должна быть 
-            указана под своим точным именем с списком строк
+            указана под своим точным именем с списком строк.
       post: Флаг автоматического проведения документа после успешного создания
     
     Returns:
@@ -1744,7 +1744,7 @@ async def create_document(
                        {"Товары": [{"Номенклатура_Key": "xxxxxxxxxx-xxxx-xxxx-xxxx", "Количество": 10}]})
       - Создать и провести платежное поручение: 
         create_document("Document_ПлатежноеПоручение", 
-                       {"Ref_Key": "xxxxxxxxxx-xxxx-xxxx-xxxx", "Date": "2024-01-15", "СуммаДокумента": 1000},
+                       {"Ref_Key": "xxxxxxxxxx-xxxx-xxxx-xxxx", "Date": "2024-01-15", "СуммаДокумента": 1000, "Контрагент_Type": "StandardODATA.Catalog_Контрагенты"},
                        post=True)
     """
     res = await asyncio.to_thread(_server.create_document_with_rows, object_name, header, rows, post)
