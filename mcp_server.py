@@ -1743,11 +1743,11 @@ async def create_document(
     Примеры использования:
       - Создать документ поступления без проведения: 
         create_document("Document_ПоступлениеТоваровУслуг", 
-                       {"Date": "2024-01-15", "Контрагент": "xxxxxxxxxx-xxxx-xxxx-xxxx"},
+                       {"Date": "2024-01-15T17:00:00", "Контрагент": "xxxxxxxxxx-xxxx-xxxx-xxxx"},
                        {"Товары": [{"Номенклатура_Key": "xxxxxxxxxx-xxxx-xxxx-xxxx", "Количество": 10}]})
       - Создать и провести платежное поручение: 
         create_document("Document_ПлатежноеПоручение", 
-                       {"Ref_Key": "xxxxxxxxxx-xxxx-xxxx-xxxx", "Date": "2024-01-15", "СуммаДокумента": 1000, "Контрагент_Type": "StandardODATA.Catalog_Контрагенты"},
+                       {"Ref_Key": "xxxxxxxxxx-xxxx-xxxx-xxxx", "Date": "2024-01-15T15:00:00", "СуммаДокумента": 1000, "Контрагент_Type": "StandardODATA.Catalog_Контрагенты"},
                        post=True)
     """
     res = await asyncio.to_thread(_server.create_document_with_rows, object_name, header, rows, post)
