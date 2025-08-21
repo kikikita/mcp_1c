@@ -70,6 +70,17 @@ def _shorten(data: Any, limit: int = 500) -> str:
     return txt
 
 
+def _unescape_strings(obj: Any) -> Any:
+    """Recursively remove escape backslashes from string values."""
+    if isinstance(obj, str):
+        return obj.replace("\\'", "'").replace('\\"', '"')
+    if isinstance(obj, dict):
+        return {k: _unescape_strings(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_unescape_strings(v) for v in obj]
+    return obj
+
+
 def logged_tool(func):
     """Decorator to log tool calls and results."""
     @functools.wraps(func)
@@ -1294,14 +1305,14 @@ async def create_object(
     )] = None,
 ) -> Dict[str, Any]:
     """
-    Создает новую запись в указанном наборе сущностей с поддержкой автоматического 
+    Создает новую запись в указанном наборе сущностей с поддержкой автоматического
     разрешения ссылочных полей и расширения связанных данных.
-    
+
     Args:
       object_name: Точное имя набора сущностей (EntitySet), полученное из resolve_entity_name()
       data: Данные для создания записи.
       expand: Поля для включения связанных данных в ответ (разделитель - запятая)
-    
+
     Returns:
       Dict с следующими полями:
         - http_code (int|null): HTTP статус код запроса
@@ -1310,26 +1321,17 @@ async def create_object(
         - odata_error_message (str|null): Детальное сообщение об ошибке OData
         - data (list|dict|null): Созданная запись с расширенными данными или None при ошибке
         - last_id (str|null): Ref_Key созданного объекта (уникальный идентификатор в 1С)
-    
+
     Примеры использования:
-      - Создать нового контрагента: 
+      - Создать нового контрагента:
         create_object("Catalog_Контрагенты", {"Description": "ООО Ромашка", "Code": "БП-00100"})
       - Создать документ платежное поручение с известным контрагентом:
-        create_object("Document_ПлатежноеПоручение", {"Date": "2024-01-15", "Контрагент": "00000000-0000-0000-0000-000000000000"
-        })
+        create_object("Document_ПлатежноеПоручение", {"Date": "2024-01-15", "Контрагент": "00000000-0000-0000-0000-000000000000"})
       - Создать номенклатуру с расширением данных единицы измерения:
         create_object("Catalog_Номенклатура", {"Description": "Новый товар"}, expand="ЕдиницаИзмерения")
     """
-    # # Функция для экранирования специальных символов в строковых значениях
-    # def escape_string_value(value: Any) -> Any:
-    #     if isinstance(value, str):
-    #         return value.replace("'", "''")
-    #     return value
-    
-    # # Экранируем все строковые значения в данных
-    # escaped_data = {key: escape_string_value(value) for key, value in data.items()}
-
-    res = await asyncio.to_thread(_server.create_object, object_name, data, expand)
+    clean_data = _unescape_strings(data)
+    res = await asyncio.to_thread(_server.create_object, object_name, clean_data, expand)
     return _json_ready(res)
 
 
@@ -1380,16 +1382,17 @@ async def update_object(
         - odata_error_code (str|null): Код ошибки OData, если произошла ошибка
         - odata_error_message (str|null): Детальное сообщение об ошибке OData
         - data (dict|null): Обновленная запись с расширенными данными или None при ошибке
-    
+
     Примеры использования:
-        - Обновить наименование контрагента: 
+        - Обновить наименование контрагента:
           update_object("Catalog_Контрагенты", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", {"Description": "Новое описание"})
         - Изменить контрагента в документе с автоматическим поиском:
           update_object("Document_ПлатежноеПоручение", "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", {"Контрагент_Key": "00000000-0000-0000-0000-000000000000"})
         - Обновить несколько полей с расширением данных:
           update_object("Catalog_Номенклатура", "cccccccc-dddd-eeee-ffff-gggggggggggg", {"Description": "Новое описание", "Цена": 150.75}, expand="ЕдиницаИзмерения")
     """
-    res = await asyncio.to_thread(_server.update_object, object_name, object_id, data, expand)
+    clean_data = _unescape_strings(data)
+    res = await asyncio.to_thread(_server.update_object, object_name, object_id, clean_data, expand)
     return _json_ready(res)
 
 
