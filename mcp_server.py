@@ -515,12 +515,16 @@ class MCPServer:
         return f"{field} eq '{safe}'"
 
     def _compose_expr_substr(self, field: str, value: Any) -> str:
+        """Строит выражение substringof с константой в первом аргументе.
+
+        OData в 1С ожидает, что первым аргументом функции будет подстрока,
+        а вторым — имя поля. Именно поэтому ранее возникала ошибка
+        "Неправильный тип аргумента": мы передавали аргументы в обратном
+        порядке. Здесь мы формируем корректное выражение
+        substringof('<подстрока>', Field).
+        """
         safe = str(value or "").replace("'", "''")
         return f"substringof('{safe}', {field})"
-
-    def _compose_expr_substr_ci(self, field: str, value: Any) -> str:
-        safe = str(value or "").lower().replace("'", "''")
-        return f"substringof('{safe}', tolower({field}))"
 
     def _progressive_attempts_for_string(
         self, object_name: str, field: str, value: str, include_only_elements: bool
@@ -529,12 +533,7 @@ class MCPServer:
         schema = self.get_entity_schema(object_name) or {}
         props: Dict[str, Dict[str, Any]] = schema.get("properties", {}) or {}
         if props.get(field, {}).get("type") == "Edm.String":
-            attempts.extend(
-                [
-                    self._compose_expr_substr(field, value),
-                    self._compose_expr_substr_ci(field, value),
-                ]
-            )
+            attempts.append(self._compose_expr_substr(field, value))
         if include_only_elements and self._has_isfolder(object_name):
             attempts = [f"{a} and IsFolder eq false" for a in attempts]
         return attempts
@@ -544,8 +543,8 @@ class MCPServer:
     ) -> List[str]:
         """
         Сначала точные eq для всех полей.
-        Потом — для КАЖДОГО строкового поля делаем варианты substringof/substringof+tolower,
-        прочие поля оставляем как eq. Собираем AND.
+        Затем для каждого строкового поля формируем вариант с substringof,
+        остальные поля остаются как eq. Собираем выражение через AND.
         """
         # 0) точный матч целиком
         base_eq = self._build_filter(filters) or ""
@@ -559,22 +558,12 @@ class MCPServer:
             if props.get(k, {}).get("type") == "Edm.String":
                 string_fields.append((k, v))
 
-        # 1) substringof для каждого строкового поля поверх eq остальных
+        # substringof для каждого строкового поля поверх eq остальных
         for fld, val in string_fields:
             parts: List[str] = []
             for k, v in filters.items():
                 if k == fld:
                     parts.append(self._compose_expr_substr(k, v))
-                else:
-                    parts.append(self._build_filter({k: v}) or "")
-            attempts.append(" and ".join([p for p in parts if p]))
-
-        # 2) substringof+tolower для каждого строкового поля
-        for fld, val in string_fields:
-            parts: List[str] = []
-            for k, v in filters.items():
-                if k == fld:
-                    parts.append(self._compose_expr_substr_ci(k, v))
                 else:
                     parts.append(self._build_filter({k: v}) or "")
             attempts.append(" and ".join([p for p in parts if p]))
@@ -836,14 +825,23 @@ class MCPServer:
 
         - filters=str:
             * если строка похожа на готовый OData `$filter`, он выполняется как есть;
-            * иначе ищем по основному текстовому полю (eq → substringof → substringof(tolower),
-              затем варианты с `IsFolder eq false`, если есть).
-        - filters=dict: сначала точные `eq`, затем для строковых полей
-          `substringof/substringof+tolower` (остальные остаются `eq`), плюс
-          попытки с `IsFolder eq false`.
+            * иначе ищем по основному текстовому полю (eq → substringof), затем
+              варианты с `IsFolder eq false`, если есть).
+        - filters=dict: сначала точные `eq`, затем для строковых полей добавляется
+          вариант с `substringof` (остальные остаются `eq`), плюс попытки с
+          `IsFolder eq false`.
 
         Возвращает первый непустой результат (учитывая `top`).
         """
+        logger.info(
+            "search_object: type=%s entity=%s filters_type=%s top=%s expand=%s filters=%r",
+            user_type,
+            user_entity,
+            type(user_filters).__name__,
+            top,
+            expand,
+            user_filters,
+        )
         object_name = self.resolve_entity_name(user_entity, user_type)
         if not object_name:
             return {
@@ -862,7 +860,14 @@ class MCPServer:
             nonlocal top, expand, object_name
             res: Dict[str, Any] = {}
             for flt in attempt_list:
+                logger.debug("attempt filter: %s", flt)
                 vals, res = self._exec_get(object_name, flt, top, expand)
+                logger.debug(
+                    "attempt result: http=%s odata=%s rows=%s",
+                    res.get("http_code"),
+                    res.get("odata_error_code"),
+                    len(vals or []),
+                )
                 if vals:
                     # Если top<=1 — вернуть одиночный объект, иначе список
                     if top is not None and int(top) <= 1:
@@ -886,7 +891,7 @@ class MCPServer:
                 normalized[field] = v
             # 1-я волна: точные eq
             attempts = [self._build_filter(normalized) or ""]
-            # 2-я волна: для каждого строкового поля — substringof / substringof+tolower
+            # 2-я волна: для каждого строкового поля — substringof
             attempts += self._progressive_attempts_for_dict(object_name, normalized, include_only_elements=False)
             # Пробуем
             res = exec_attempts([a for a in attempts if a])
